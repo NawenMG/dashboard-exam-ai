@@ -1,0 +1,77 @@
+services:
+  mariadb:
+    image: mariadb:11.5
+    container_name: fastapi_mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      TZ: Europe/Rome
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mariadb-admin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "-p${MARIADB_ROOT_PASSWORD}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  adminer:
+    image: adminer:4
+    container_name: fastapi_adminer
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi_api
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      TZ: Europe/Rome
+      # Esempio: SQLAlchemy/Alembic tipicamente leggono DATABASE_URL
+      # Usa la rete docker: host = mariadb
+      DATABASE_URL: "mysql+pymysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb:3306/${MARIADB_DATABASE}"
+      SEED_ON_START: "true"
+      SEED_STRICT: "false"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      OLLAMA_MODEL: "llama3.1:8b"
+    ports:
+      - "8000:8000"
+    # volume NELLA WORKDIR (/app) come richiesto
+    volumes:
+      - ./:/app
+    networks:
+      - backend
+
+volumes:
+  mariadb_data:
+
+networks:
+  backend:
+    driver: bridge

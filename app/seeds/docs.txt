@@ -1,0 +1,1 @@
+per avviare: python -m app.seeds.seed

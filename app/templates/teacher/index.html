@@ -1,0 +1,466 @@
+{% extends "base.html" %} {% block title %}Dashboard Exams{% endblock %} {%
+block body %}
+<!-- Header -->
+<header class="py-3" style="background-color: #848789">
+  <div class="container">
+    <div class="d-flex align-items-center justify-content-between">
+      <!-- Left -->
+      <div class="text-white fw-semibold">Dashboard Exams</div>
+
+      <!-- Center -->
+      <div class="text-white-50 small text-center" id="userCenterLabel">
+        Caricamento utente...
+      </div>
+
+      <!-- Right logout icon -->
+      <button
+        class="btn btn-sm btn-outline-light"
+        id="logoutBtn"
+        title="Logout"
+        aria-label="Logout"
+        type="button"
+      >
+        <i class="fa-solid fa-right-from-bracket"></i>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Content -->
+<main class="container py-4 flex-grow-1">
+  <!-- Toolbar top-right: + exam (teacher) -->
+  <div class="d-flex justify-content-end mb-3">
+    <button
+      id="btnCreateExam"
+      class="btn btn-sm btn-outline-secondary d-none"
+      title="Aggiungi esame"
+      type="button"
+    >
+      <i class="fa-solid fa-plus"></i>
+    </button>
+  </div>
+
+  {% block content %}
+
+  <!-- TEACHER: ESAMI -->
+  <section id="viewTeacherExams" class="d-none">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h2 class="h6 mb-0">I miei esami</h2>
+      <span id="examsStatus" class="small text-muted"></span>
+    </div>
+
+    <div id="examsList" class="d-grid gap-2"></div>
+  </section>
+
+  <!-- TEACHER: STUDENTI (placeholder) -->
+  <section id="viewTeacherStudents" class="d-none">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h6 mb-1">Studenti</h2>
+        <p class="text-muted mb-0">
+          Placeholder: qui metteremo la lista studenti.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEACHER: FINAL GRADES (placeholder) -->
+  <section id="viewTeacherFinals" class="d-none">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h6 mb-1">Final grades</h2>
+        <p class="text-muted mb-0">
+          Placeholder: qui metteremo ricerca per studente/voto.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STUDENT: ESAMI DISPONIBILI (placeholder) -->
+  <section id="viewStudentAvailable" class="d-none">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h6 mb-1">Esami disponibili</h2>
+        <p class="text-muted mb-0">
+          Placeholder: qui metteremo gli esami a cui partecipare.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STUDENT: ESAMI COMPLETATI + VOTO (placeholder) -->
+  <section id="viewStudentCompleted" class="d-none">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h6 mb-1">Esami completati</h2>
+        <p class="text-muted mb-0">
+          Placeholder: qui metteremo esami completati + final grade.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODALE: DETTAGLI SUBMISSION -->
+  <div class="modal fade" id="submissionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background-color: #848789">
+          <h5 class="modal-title text-white mb-0" id="subModalTitle">
+            Submission
+          </h5>
+          <button
+            type="button"
+            class="btn-close btn-close-white"
+            data-bs-dismiss="modal"
+            aria-label="Chiudi"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <!-- META -->
+          <div id="subModalMeta" class="small text-muted mb-3"></div>
+
+          <!-- ANSWERS -->
+          <div class="mb-2 fw-semibold">Answers</div>
+          <div id="subModalAnswers" class="d-grid gap-2 mb-4"></div>
+          <div id="subModalEmpty" class="text-muted small d-none mb-4">
+            Nessuna risposta trovata.
+          </div>
+
+          <!-- EVALUATIONS ROW -->
+          <div class="row g-3 mb-4" id="evalCardsRow">
+            <!-- STUDENT -->
+            <div class="col-md-4">
+              <div class="card border-success h-100">
+                <div
+                  class="card-header bg-success text-white small fw-semibold"
+                >
+                  Autovalutazione studente
+                </div>
+                <div class="card-body small" id="evalStudentBody"></div>
+              </div>
+            </div>
+
+            <!-- TEACHER -->
+            <div class="col-md-4">
+              <div class="card border-danger h-100">
+                <div class="card-header bg-danger text-white small fw-semibold">
+                  Valutazione docente
+                </div>
+                <div class="card-body small" id="evalTeacherBody"></div>
+              </div>
+            </div>
+
+            <!-- AI -->
+            <div class="col-md-4">
+              <div class="card border-primary h-100">
+                <div
+                  class="card-header bg-primary text-white small fw-semibold"
+                >
+                  Valutazione AI
+                </div>
+                <div class="card-body small" id="evalAiBody"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FINAL GRADE BUTTON -->
+          <div class="text-center mb-3">
+            <button
+              class="btn btn-dark btn-sm"
+              id="btnComputeFinalGrade"
+              disabled
+            >
+              Calcola Final Grade
+            </button>
+          </div>
+
+          <!-- FINAL GRADE CONFIG (COLLAPSE) -->
+          <div class="collapse" id="finalGradeCollapse">
+            <div class="card border-0 shadow-sm">
+              <div class="card-body">
+                <div class="fw-semibold mb-2">Imposta i pesi (somma = 10)</div>
+
+                <div class="row g-2">
+                  <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1"
+                      >Peso Autovalutazione</label
+                    >
+                    <input
+                      id="wStudent"
+                      type="number"
+                      class="form-control form-control-sm"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value="1"
+                    />
+                  </div>
+
+                  <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1"
+                      >Peso Docente</label
+                    >
+                    <input
+                      id="wTeacher"
+                      type="number"
+                      class="form-control form-control-sm"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value="6"
+                    />
+                  </div>
+
+                  <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1"
+                      >Peso AI</label
+                    >
+                    <input
+                      id="wAi"
+                      type="number"
+                      class="form-control form-control-sm"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value="3"
+                    />
+                  </div>
+                </div>
+
+                <div class="small mt-2">
+                  Somma: <strong id="weightsSum">10</strong>/10
+                  <span id="weightsHint" class="text-muted ms-2"></span>
+                </div>
+
+                <div
+                  id="weightsError"
+                  class="alert alert-danger d-none mt-2 mb-0"
+                ></div>
+
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    id="btnCancelFinalGrade"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-dark"
+                    id="btnConfirmFinalGrade"
+                    disabled
+                  >
+                    Conferma calcolo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FINAL GRADE CARD -->
+          <div id="finalGradeContainer"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+            type="button"
+          >
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE: CREAZIONE ESAME (NO JSON MANUALE) -->
+  <div class="modal fade" id="createExamModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background-color: #848789">
+          <h5 class="modal-title text-white mb-0">
+            <i class="fa-solid fa-plus me-2"></i>Crea nuovo esame
+          </h5>
+          <button
+            type="button"
+            class="btn-close btn-close-white"
+            data-bs-dismiss="modal"
+            aria-label="Chiudi"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <form id="createExamForm" novalidate>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Titolo</label>
+                <input
+                  id="ceTitle"
+                  class="form-control"
+                  required
+                  maxlength="255"
+                  placeholder="Es. Verifica Algebra 1"
+                />
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Descrizione (opzionale)</label>
+                <textarea
+                  id="ceDescription"
+                  class="form-control"
+                  rows="2"
+                  placeholder="Note per gli studenti..."
+                ></textarea>
+              </div>
+
+              <!-- QUESTIONS (UI) -->
+              <div class="col-12">
+                <label class="form-label fw-semibold">Domande</label>
+                <div id="questionsContainer" class="d-grid gap-2"></div>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary mt-2"
+                  id="btnAddQuestion"
+                >
+                  <i class="fa-solid fa-plus me-1"></i>Aggiungi domanda
+                </button>
+                <div class="form-text">
+                  Inserisci testo e punteggio massimo per ciascuna domanda.
+                </div>
+              </div>
+
+              <!-- RUBRIC (UI) -->
+              <div class="col-12">
+                <label class="form-label fw-semibold mt-3"
+                  >Criteri di valutazione</label
+                >
+                <div id="criteriaContainer" class="d-grid gap-2"></div>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-secondary mt-2"
+                  id="btnAddCriterion"
+                >
+                  <i class="fa-solid fa-plus me-1"></i>Aggiungi criterio
+                </button>
+                <div class="form-text">
+                  Inserisci il nome del criterio e il suo peso (es. 1, 0.5,
+                  2...).
+                </div>
+              </div>
+
+              <!-- AI CONFIG (UI -> openai_schema_json) -->
+              <div class="col-12">
+                <label class="form-label fw-semibold mt-3"
+                  >Configurazione AI</label
+                >
+
+                <div class="card p-3 bg-light border-0">
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label mb-1">Voto minimo</label>
+                      <input
+                        type="number"
+                        id="aiMinScore"
+                        class="form-control"
+                        value="0"
+                      />
+                    </div>
+
+                    <div class="col-6">
+                      <label class="form-label mb-1">Voto massimo</label>
+                      <input
+                        type="number"
+                        id="aiMaxScore"
+                        class="form-control"
+                        value="30"
+                      />
+                    </div>
+
+                    <div class="col-12 d-flex align-items-center gap-2 mt-2">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="aiHonors"
+                      />
+                      <label class="form-check-label" for="aiHonors"
+                        >Permetti honors</label
+                      >
+                    </div>
+
+                    <div class="col-12 mt-2">
+                      <label class="form-label mb-1"
+                        >Note per AI (opzionale)</label
+                      >
+                      <input
+                        type="text"
+                        id="aiNotes"
+                        class="form-control"
+                        placeholder="Es. sii severo su correttezza e completezza"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="form-text mt-2">
+                    Questi campi verranno convertiti automaticamente in
+                    <code>openai_schema_json</code>.
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-12 d-flex align-items-center gap-2">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="cePublished"
+                />
+                <label class="form-check-label" for="cePublished"
+                  >Pubblicato</label
+                >
+              </div>
+            </div>
+
+            <div id="ceError" class="alert alert-danger mt-3 d-none"></div>
+            <div id="ceSuccess" class="alert alert-success mt-3 d-none"></div>
+          </form>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+            type="button"
+          >
+            Annulla
+          </button>
+          <button
+            id="ceSubmitBtn"
+            type="button"
+            class="btn text-white"
+            style="background-color: #619ad6"
+          >
+            Crea esame
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endblock %}
+</main>
+
+<!-- Footer primary bar -->
+<footer
+  class="mt-auto"
+  style="height: 44px; background-color: #848789"
+></footer>
+{% block scripts %}
+<script src="{{ url_for('static', path='js/teacher/base.js') }}"></script>
+<script src="{{ url_for('static', path='js/teacher/modal.js') }}"></script>
+<script src="{{ url_for('static', path='js/teacher/submissions.js') }}"></script>
+<script src="{{ url_for('static', path='js/teacher/exams.js') }}"></script>
+<script src="{{ url_for('static', path='js/teacher/index.js') }}"></script>
+
+{% endblock %} {% endblock %}

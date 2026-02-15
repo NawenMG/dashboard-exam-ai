@@ -1,0 +1,104 @@
+# =========================
+# PYTHON
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# mypy / type check
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff / lint
+.ruff_cache/
+
+# =========================
+# VIRTUAL ENV
+# =========================
+#.venv/
+#venv/
+#env/
+#ENV/
+
+# =========================
+# IDE / EDITOR
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# GIT
+# =========================
+.git/
+.gitignore
+
+# =========================
+# DOCKER
+# =========================
+docker-compose.override.yml
+
+# opzionale: escludi Dockerfile solo se non buildi da locale
+# Dockerfile
+
+
+# =========================
+# LOGS
+# =========================
+*.log
+logs/
+tmp/
+
+# =========================
+# BUILD / DIST
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# DATABASE LOCALI
+# =========================
+*.sqlite
+*.db
+
+# =========================
+# CACHE VARIE
+# =========================
+.cache/
+
+# =========================
+# FILE TEMPORANEI WINDOWS
+# =========================
+desktop.ini
+
+# =========================
+# NODE (se mai aggiungerai frontend)
+# =========================
+node_modules/
+
+# =========================
+# FILE NON NECESSARI ALLA BUILD
+# =========================
+docs_*.txt
+templateVecchioELungo
+outputFormat
+index_teacher_funzionante_*
+#keys/

@@ -1,0 +1,71 @@
+{% extends "base.html" %} {% block title %}Dashboard{% endblock %} {% block body
+%}
+<main class="container py-5">
+  <div class="text-center text-muted">
+    <div class="spinner-border" role="status" aria-hidden="true"></div>
+    <div class="mt-3">Caricamento dashboard...</div>
+  </div>
+</main>
+
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    if (window.__DASH_ROUTER_INIT__) return;
+    window.__DASH_ROUTER_INIT__ = true;
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      window.location.href = "/auth/login";
+      return;
+    }
+
+    async function api(path, options = {}) {
+      const token = localStorage.getItem("access_token");
+      const headers = new Headers(options.headers || {});
+      if (token) headers.set("Authorization", "Bearer " + token);
+      if (options.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+
+      const res = await fetch(path, { ...options, headers });
+
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_) {}
+
+      if (!res.ok) {
+        const msg = data?.detail
+          ? typeof data.detail === "string"
+            ? data.detail
+            : JSON.stringify(data.detail)
+          : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    (async () => {
+      try {
+        const me = await api("/auth/me");
+
+        if (me?.role === "teacher") {
+          window.location.replace("/dashboard/teacher");
+          return;
+        }
+
+        if (me?.role === "student") {
+          window.location.replace("/dashboard/student");
+          return;
+        }
+
+        // ruolo non supportato
+        localStorage.removeItem("access_token");
+        window.location.href = "/auth/login";
+      } catch (e) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/auth/login";
+      }
+    })();
+  });
+</script>
+{% endblock %}
