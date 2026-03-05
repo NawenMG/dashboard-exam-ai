@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
@@ -44,11 +44,11 @@ def login_page(request: Request):
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
 )
-def login(
+async def login(
     payload: LoginRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    token = AuthService.login(
+    token = await AuthService.login(
         db,
         email=payload.email,
         password=payload.password,
@@ -65,8 +65,8 @@ def login(
     response_model=LogoutResponse,
     status_code=status.HTTP_200_OK,
 )
-def logout(
-    db: Session = Depends(get_db),
+async def logout(
+    db: AsyncSession = Depends(get_db),
     authorization: str | None = Header(default=None),
 ):
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -77,7 +77,7 @@ def logout(
 
     token = authorization.split(" ", 1)[1].strip()
 
-    AuthService.logout(db, token=token)
+    await AuthService.logout(db, token=token)
 
     return LogoutResponse(detail="Logged out")
 

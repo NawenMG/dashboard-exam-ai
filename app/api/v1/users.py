@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_role
 from app.models.user import User
@@ -49,8 +49,8 @@ def teachers_view(
 
 
 @router.get("/students", response_model=PagedUsers)
-def list_students(
-    db: Session = Depends(get_db),
+async def list_students(
+    db: AsyncSession = Depends(get_db),
     teacher: User = Depends(require_role("teacher")),  # ✅ solo teacher
     page: int = Query(1, ge=1),
     page_size: int = Query(5, ge=1, le=50),
@@ -63,7 +63,7 @@ def list_students(
     Per docenti: lista studenti con filtri LIKE opzionali.
     Paginazione: page/page_size.
     """
-    return UserService.get_students(
+    return await UserService.get_students(
         db,
         page=page,
         page_size=page_size,
@@ -75,8 +75,8 @@ def list_students(
 
 
 @router.get("/teachers", response_model=PagedUsers)
-def list_teachers(
-    db: Session = Depends(get_db),
+async def list_teachers(
+    db: AsyncSession = Depends(get_db),
     student: User = Depends(require_role("student")),  # ✅ solo student
     page: int = Query(1, ge=1),
     page_size: int = Query(5, ge=1, le=50),
@@ -88,7 +88,7 @@ def list_teachers(
     Per studenti: lista docenti con filtri LIKE opzionali.
     Paginazione: page/page_size.
     """
-    return UserService.get_teachers(
+    return await UserService.get_teachers(
         db,
         page=page,
         page_size=page_size,

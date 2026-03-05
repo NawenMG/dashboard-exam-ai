@@ -1,24 +1,24 @@
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.core.security import decode_access_token
 from app.repositories.revoked_token_repository import RevokedTokenRepository
 
-# Gestione della sessione db, autenticazione dell'utente tramite jwt, verifica se il toke è revocato e verifica dei ruoli
+
+# Gestione della sessione db, autenticazione dell'utente tramite jwt,
+# verifica se il token è revocato e verifica dei ruoli
 
 
-def get_db():
-    db = SessionLocal()
-    try:
+async def get_db():
+    async with SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 
-def get_current_user(
-    db: Session = Depends(get_db),
+async def get_current_user(
+    db: AsyncSession = Depends(get_db),
     authorization: str | None = Header(default=None),
 ) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -42,13 +42,18 @@ def get_current_user(
             detail="Invalid token (missing jti)",
         )
 
-    if RevokedTokenRepository.is_revoked(db, jti):
+    # ✅ async: repository deve essere async e usare await
+    if await RevokedTokenRepository.is_revoked(db, jti):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked"
         )
 
     user_id = int(claims["sub"])
-    user = db.query(User).filter(User.id == user_id).first()
+
+    # ✅ async: niente db.query(), usa select()
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 

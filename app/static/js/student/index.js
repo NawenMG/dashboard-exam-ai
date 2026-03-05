@@ -7,10 +7,17 @@
     if (window.__DASH_STUDENT_INIT__) return;
     window.__DASH_STUDENT_INIT__ = true;
 
-    function initWhenDashReady() {
+    async function initWhenDashReady() {
       const me = window.DASH?.me;
       if (!me) return;
-      NS.exams.refreshUI(me);
+
+      // Esami
+      await NS.exams.refreshUI(me);
+
+      // Peer tasks (se modulo presente)
+      if (NS.peer?.refreshUI) {
+        await NS.peer.refreshUI(me);
+      }
     }
 
     if (window.DASH && window.DASH.me) {

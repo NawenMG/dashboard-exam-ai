@@ -6,16 +6,25 @@ set -e
 
 echo "==> Waiting for DB..."
 python - <<'PY'
-import os, time
-import sqlalchemy as sa
+import os, time, asyncio
+import asyncpg
 
-url = os.environ["DATABASE_URL"]
+# SQLAlchemy async URL: postgresql+asyncpg://user:pass@host:port/db
+# asyncpg wants: postgresql://user:pass@host:port/db
+url = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
+
+async def check():
+    conn = await asyncpg.connect(url)
+    try:
+        v = await conn.fetchval("SELECT 1")
+        return v
+    finally:
+        await conn.close()
+
 for i in range(30):
     try:
-        engine = sa.create_engine(url, pool_pre_ping=True)
-        with engine.connect() as c:
-            c.execute(sa.text("SELECT 1"))
-        print("DB OK")
+        v = asyncio.run(check())
+        print("DB OK", v)
         break
     except Exception as e:
         print("DB not ready yet:", e)

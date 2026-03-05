@@ -1,5 +1,5 @@
 import math
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.user_repository import UserRepository, PAGE_SIZE_DEFAULT
 from app.schemas.user import PagedUsers, PageMeta, UserOut
@@ -7,8 +7,8 @@ from app.schemas.user import PagedUsers, PageMeta, UserOut
 
 class UserService:
     @staticmethod
-    def get_students(
-        db: Session,
+    async def get_students(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = 5,
@@ -17,7 +17,7 @@ class UserService:
         email: str | None = None,
         matricola: str | None = None,
     ) -> PagedUsers:
-        items, total = UserRepository.list_students(
+        items, total = await UserRepository.list_students(
             db,
             page=page,
             page_size=page_size,
@@ -40,8 +40,8 @@ class UserService:
         )
 
     @staticmethod
-    def get_teachers(
-        db: Session,
+    async def get_teachers(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = 5,
@@ -49,7 +49,7 @@ class UserService:
         last_name: str | None = None,
         subject: str | None = None,
     ) -> PagedUsers:
-        items, total = UserRepository.list_teachers(
+        items, total = await UserRepository.list_teachers(
             db,
             page=page,
             page_size=page_size,

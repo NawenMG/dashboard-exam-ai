@@ -1,5 +1,6 @@
 from sqlalchemy import select, func, desc
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.submission import Submission
 from app.models.answer import Answer
@@ -13,25 +14,25 @@ PAGE_SIZE_MAX = 50
 class SubmissionRepository:
     # Crea una submission e salva anche tutte le answer (POST)
     @staticmethod
-    def create_with_answers(
-        db: Session,
+    async def create_with_answers(
+        db: AsyncSession,
         *,
         submission: Submission,
         answers: list[Answer],
     ) -> Submission:
         db.add(submission)
-        db.flush()
+        await db.flush()
 
         for a in answers:
             a.submission_id = submission.id
             db.add(a)
 
-        db.flush()
+        await db.flush()
         return submission
 
     # Trova una precisa submission (GET: id)
     @staticmethod
-    def get_by_id(db: Session, submission_id: int) -> Submission | None:
+    async def get_by_id(db: AsyncSession, submission_id: int) -> Submission | None:
         stmt = (
             select(Submission)
             .where(Submission.id == submission_id)
@@ -40,12 +41,13 @@ class SubmissionRepository:
                 selectinload(Submission.student),
             )
         )
-        return db.execute(stmt).scalar_one_or_none()
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     # Ritorna la lista di submission per materia del teacher for exam (GET: specific)
     @staticmethod
-    def list_by_subject(
-        db: Session,
+    async def list_by_subject(
+        db: AsyncSession,
         *,
         subject: str,
         page: int = 1,
@@ -62,7 +64,7 @@ class SubmissionRepository:
             .join(User, User.id == Exam.teacher_id)
             .where(User.subject == subject)
         )
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Submission)
@@ -77,14 +79,14 @@ class SubmissionRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # La lista delle submission per student id (GET: specific)
     @staticmethod
-    def list_by_student_id(
-        db: Session,
+    async def list_by_student_id(
+        db: AsyncSession,
         *,
         student_id: int,
         page: int = 1,
@@ -97,7 +99,7 @@ class SubmissionRepository:
         count_stmt = select(func.count(Submission.id)).where(
             Submission.student_id == student_id
         )
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Submission)
@@ -110,14 +112,14 @@ class SubmissionRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # Permette al teacher di far vedere le submission di uno studente per i suoi esami (GET: specific)
     @staticmethod
-    def list_by_student_id_for_teacher(
-        db: Session,
+    async def list_by_student_id_for_teacher(
+        db: AsyncSession,
         *,
         student_id: int,
         teacher_id: int,
@@ -135,7 +137,7 @@ class SubmissionRepository:
             .where(Submission.student_id == student_id)
             .where(Exam.teacher_id == teacher_id)
         )
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Submission)
@@ -150,14 +152,14 @@ class SubmissionRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # Lista delle submission di un esame solo se l'esame appartiene a quel teacher (GET: specific)
     @staticmethod
-    def list_by_exam_id_for_teacher(
-        db: Session,
+    async def list_by_exam_id_for_teacher(
+        db: AsyncSession,
         *,
         exam_id: int,
         teacher_id: int,
@@ -176,7 +178,7 @@ class SubmissionRepository:
             .where(Submission.exam_id == exam_id)
             .where(Exam.teacher_id == teacher_id)
         )
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Submission)
@@ -191,6 +193,6 @@ class SubmissionRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)

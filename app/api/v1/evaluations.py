@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models.user import User
@@ -7,6 +7,7 @@ from app.schemas.evaluation import (
     EvaluationCreate,
     EvaluationOut,
     EvaluationsBySubmission,
+    PeerTaskOut,
 )
 from app.services.evaluation_service import EvaluationService
 
@@ -14,20 +15,54 @@ router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
 
 @router.post("", response_model=EvaluationOut, status_code=status.HTTP_201_CREATED)
-def create_evaluation(
+async def create_evaluation(
     payload: EvaluationCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return EvaluationService.create_evaluation(db, user=user, payload=payload)
+    return await EvaluationService.create_evaluation(db, user=user, payload=payload)
+
+
+@router.get("/peer/tasks", response_model=list[PeerTaskOut])
+async def get_peer_tasks(
+    exam_id: int | None = Query(default=None),
+    limit: int = Query(default=5, ge=1, le=5),
+    db: AsyncSession = Depends(get_db),
+    student: User = Depends(require_role("student")),
+):
+    return await EvaluationService.get_peer_tasks(
+        db, student=student, exam_id=exam_id, limit=limit
+    )
+
+
+@router.get("/peer/summary/{submission_id}")
+async def get_peer_summary(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+    teacher: User = Depends(require_role("teacher")),
+):
+    return await EvaluationService.peer_summary_for_teacher(
+        db, teacher=teacher, submission_id=submission_id
+    )
+
+
+@router.post("/peer/close/{submission_id}")
+async def close_peer_reviews(
+    submission_id: int,
+    db: AsyncSession = Depends(get_db),
+    teacher: User = Depends(require_role("teacher")),
+):
+    return await EvaluationService.close_peer_reviews_and_compute(
+        db, teacher=teacher, submission_id=submission_id
+    )
 
 
 @router.get("/by-submission/{submission_id}", response_model=EvaluationsBySubmission)
-def list_evaluations_by_submission(
+async def list_evaluations_by_submission(
     submission_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     teacher: User = Depends(require_role("teacher")),
 ):
-    return EvaluationService.list_by_submission_id_for_teacher(
+    return await EvaluationService.list_by_submission_id_for_teacher(
         db, teacher=teacher, submission_id=submission_id
     )

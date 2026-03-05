@@ -3,7 +3,8 @@ from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
 from app.models.evaluation import Evaluation, EvaluatorType
@@ -15,9 +16,8 @@ from app.services.ai_service import (
     normalize_questions,
     normalize_rubric,
     build_items_for_prompt,
-    build_prompt,
-    evaluate_with_ollama,
 )
+from app.services.vectors.rag_grading_service import RAGGradingService
 
 
 def _dumps_json(value):
@@ -26,13 +26,10 @@ def _dumps_json(value):
     return json.dumps(value, ensure_ascii=False)
 
 
-# da submission → chiamata AI → salvataggio evaluation AI → aggiornamento stato submission
-
-
 class AIEvaluationService:
     @staticmethod
     async def run_ai_evaluation(
-        db: Session,
+        db: AsyncSession,
         *,
         teacher: User,
         submission_id: int,
@@ -49,12 +46,16 @@ class AIEvaluationService:
                 status_code=403, detail="Only teachers can run AI evaluation."
             )
 
-        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        result = await db.execute(
+            select(Submission).where(Submission.id == submission_id)
+        )
+        submission = result.scalars().first()
 
         if not submission:
             raise HTTPException(status_code=404, detail="Submission not found.")
 
-        exam = db.query(Exam).filter(Exam.id == submission.exam_id).first()
+        result = await db.execute(select(Exam).where(Exam.id == submission.exam_id))
+        exam = result.scalars().first()
 
         if not exam:
             raise HTTPException(
@@ -67,30 +68,28 @@ class AIEvaluationService:
             )
 
         # 🔥 CHECK EXISTING → IDPOTENTE
-        existing = EvaluationRepository.get_by_submission_and_type(
+        existing = await EvaluationRepository.get_by_submission_and_type(
             db,
             submission_id=submission.id,
             evaluator_type=EvaluatorType.ai,
         )
 
         if existing:
-            # restituisce esistente senza crearne uno nuovo
             if isinstance(existing.details_json, str) and existing.details_json:
                 try:
                     existing.details_json = json.loads(existing.details_json)
                 except Exception:
                     pass
-
             return existing, False
 
         # --- crea nuova evaluation ---
 
-        answers = (
-            db.query(Answer)
-            .filter(Answer.submission_id == submission.id)
+        answers_result = await db.execute(
+            select(Answer)
+            .where(Answer.submission_id == submission.id)
             .order_by(Answer.question_index.asc())
-            .all()
         )
+        answers = answers_result.scalars().all()
 
         answers_by_index = {a.question_index: (a.answer_text or "") for a in answers}
 
@@ -102,22 +101,51 @@ class AIEvaluationService:
             answers_by_index,
         )
 
-        prompt = build_prompt(
-            exam_title=exam.title,
-            exam_description=exam.description,
-            rubric=rubric,
-            qa_items=qa_items,
-        )
+        # MVP: version fissa (poi la leghiamo a exam.materials_version o tabella materials)
+        materials_version = 1
 
-        schema_format = exam.openai_schema_json
+        # Grounded grading (retrieval + prompt + Ollama)
+        try:
+            out = await RAGGradingService.grade_submission_grounded(
+                exam_id=exam.id,
+                materials_version=materials_version,
+                exam_title=exam.title,
+                exam_description=exam.description,
+                rubric=rubric,
+                qa_items=qa_items,
+                model=model,
+                schema_format=getattr(exam, "openai_schema_json", None),
+                top_k=8,
+                num_predict=512,
+                keep_alive="10m",
+            )
+        except Exception as e:
+            # mappa l'errore su 503 (dipendenza esterna: Ollama/Qdrant)
+            raise HTTPException(
+                status_code=503, detail=f"AI/RAG evaluation failed: {e}"
+            )
 
-        result = await evaluate_with_ollama(
-            model=model,
-            prompt=prompt,
-            schema_format=schema_format,
-            num_predict=512,
-            keep_alive="10m",
-        )
+        result = out.ai_result
+        used_chunks = out.used_chunks
+
+        # Salviamo audit RAG senza migrazioni: details_json include sia breakdown AI che chunk usati
+        details_payload = {
+            "details_json": result.get("details_json"),
+            "rag": {
+                "materials_version": materials_version,
+                "top_k": 8,
+                "used_chunks": [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "material_id": c.material_id,
+                        "source_ref": c.source_ref,
+                        "page": c.page,
+                        "score": c.score,
+                    }
+                    for c in used_chunks
+                ],
+            },
+        }
 
         now = datetime.utcnow()
 
@@ -127,30 +155,29 @@ class AIEvaluationService:
             score=int(result["score"]),
             honors=bool(result["honors"]),
             comment=str(result["comment"]),
-            details_json=_dumps_json(result.get("details_json")),
+            details_json=_dumps_json(details_payload),
             created_at=now,
             updated_at=now,
         )
 
         try:
             db.add(evaluation)
-            db.flush()
+            await db.flush()
 
             submission.status = SubmissionStatus.ai_done
             submission.updated_at = now
 
-            db.commit()
-            db.refresh(evaluation)
+            await db.commit()
+            await db.refresh(evaluation)
 
         except IntegrityError:
-            db.rollback()
+            await db.rollback()
 
-            existing = EvaluationRepository.get_by_submission_and_type(
+            existing = await EvaluationRepository.get_by_submission_and_type(
                 db,
                 submission_id=submission.id,
                 evaluator_type=EvaluatorType.ai,
             )
-
             return existing, False
 
         if isinstance(evaluation.details_json, str) and evaluation.details_json:

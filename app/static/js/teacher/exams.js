@@ -51,7 +51,9 @@
       <div class="d-grid gap-2">
         ${
           type === "textarea"
-            ? `<textarea class="form-control" rows="3" placeholder="${utils.escapeHtml(placeholder || "")}"></textarea>`
+            ? `<textarea class="form-control" rows="3" placeholder="${utils.escapeHtml(
+                placeholder || "",
+              )}"></textarea>`
             : `<input class="form-control" placeholder="${utils.escapeHtml(placeholder || "")}">`
         }
         <div class="d-flex justify-content-end gap-2">
@@ -257,6 +259,299 @@
   }
 
   // ==========================
+  // Materials API helpers (ENDPOINT REALI)
+  // ==========================
+  async function listMaterials(examId) {
+    if (!examId) return [];
+    const res = await window.DASH.api(`/exams/${examId}/materials`, { method: "GET" });
+    return res?.items || [];
+  }
+
+  async function deleteMaterial(examId, materialId) {
+    if (!examId) throw new Error("ID esame mancante.");
+    await window.DASH.api(`/exams/${examId}/materials/${materialId}`, { method: "DELETE" });
+  }
+
+  function openMaterial(examId, materialId) {
+    if (!examId) return;
+    window.open(`/exams/${examId}/materials/${materialId}/download`, "_blank", "noopener");
+  }
+
+  async function uploadMaterialPdfToExam(examId, file) {
+    if (!examId) throw new Error("ID esame mancante.");
+    if (!file) throw new Error("Seleziona un file PDF.");
+
+    const isPdf =
+      file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
+    if (!isPdf) throw new Error("Formato non valido: carica un PDF.");
+
+    const form = new FormData();
+    form.append("file", file);
+
+    return await window.DASH.api(`/exams/${examId}/materials/pdf`, {
+      method: "POST",
+      body: form,
+    });
+  }
+
+  // ==========================
+  // ✅ Create modal: draft-first + upload subito
+  // ==========================
+  let createdExamIdForUpload = null;
+  let createdExamIsDraft = false;
+  let draftSupported = null; // null=unknown, true/false dopo prima prova
+
+  function setUploadStatus(msg, kind = "muted") {
+    const el = document.getElementById("materialUploadStatus");
+    if (!el) return;
+    const cls =
+      kind === "success" ? "text-success" : kind === "danger" ? "text-danger" : "text-muted";
+    el.className = `small mt-2 ${cls}`;
+    el.textContent = msg || "";
+  }
+
+  function setUploadButtonEnabled(enabled) {
+    const btn = document.getElementById("btnUploadMaterialPdf"); // LABEL
+    if (!btn) return;
+    // Solo estetica: non blocchiamo picker/click
+    btn.setAttribute("aria-disabled", enabled ? "false" : "true");
+    btn.classList.toggle("opacity-50", !enabled);
+    btn.classList.toggle("disabled", !enabled);
+  }
+
+  function setCreatedExamId(examId, { isDraft = false } = {}) {
+    createdExamIdForUpload = examId;
+    createdExamIsDraft = !!isDraft;
+
+    const hint = document.getElementById("materialUploadHint");
+    setUploadButtonEnabled(true); // ✅ sempre cliccabile nel modale
+
+    if (hint) {
+      if (!examId) {
+        hint.textContent = "Carica PDF: creerò automaticamente una bozza (draft).";
+      } else if (isDraft) {
+        hint.textContent = `Bozza pronta (ID ${examId}). Puoi caricare PDF subito.`;
+      } else {
+        hint.textContent = `Esame pronto (ID ${examId}). Puoi caricare PDF.`;
+      }
+    }
+  }
+
+  async function ensureDraftExamId() {
+    if (createdExamIdForUpload) return createdExamIdForUpload;
+    if (draftSupported === false) throw new Error("Draft non supportato dal backend.");
+
+    setUploadStatus("Creo una bozza per upload...", "muted");
+    try {
+      const draft = await window.DASH.api("/exams/draft", { method: "POST" });
+      if (!draft?.id) throw new Error("Bozza non valida.");
+      draftSupported = true;
+      setCreatedExamId(draft.id, { isDraft: true });
+      return draft.id;
+    } catch (e) {
+      // 404/405 tipicamente
+      draftSupported = false;
+      throw e;
+    }
+  }
+
+  function renderCreateMaterialsList(items) {
+    const listEl = document.getElementById("materialPdfList");
+    const emptyEl = document.getElementById("materialPdfEmpty");
+    if (!listEl || !emptyEl) return;
+
+    listEl.innerHTML = "";
+    if (!items.length) {
+      emptyEl.classList.remove("d-none");
+      return;
+    }
+    emptyEl.classList.add("d-none");
+
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "card p-2 border-0 shadow-sm";
+      row.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div class="small">
+            <i class="fa-solid fa-file-pdf me-2 text-danger"></i>
+            ${utils.escapeHtml(it.filename || ("PDF #" + it.id))}
+            <div class="text-muted small">${utils.safeDate(it.uploaded_at)}</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" type="button" title="Apri" data-act="open">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" type="button" title="Rimuovi" data-act="del">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+
+      row.querySelector('[data-act="open"]').onclick = () => {
+        if (!createdExamIdForUpload) return;
+        openMaterial(createdExamIdForUpload, it.id);
+      };
+
+      row.querySelector('[data-act="del"]').onclick = async () => {
+        if (!createdExamIdForUpload) return;
+        const delBtn = row.querySelector('[data-act="del"]');
+        const openBtn = row.querySelector('[data-act="open"]');
+        delBtn.disabled = true;
+        openBtn.disabled = true;
+
+        try {
+          await deleteMaterial(createdExamIdForUpload, it.id);
+          const updated = await listMaterials(createdExamIdForUpload);
+          renderCreateMaterialsList(updated);
+          setUploadStatus("File rimosso.", "success");
+        } catch (e) {
+          setUploadStatus(`Errore rimozione: ${e?.message || "errore"}`, "danger");
+          delBtn.disabled = false;
+          openBtn.disabled = false;
+        }
+      };
+
+      listEl.appendChild(row);
+    }
+  }
+
+  async function refreshCreateMaterialsList() {
+    if (!createdExamIdForUpload) {
+      renderCreateMaterialsList([]);
+      return;
+    }
+    const items = await listMaterials(createdExamIdForUpload);
+    renderCreateMaterialsList(items);
+  }
+
+  // ==========================
+  // ✅ Existing exam accordion materials UI
+  // ==========================
+  function makeMaterialsBlockForExistingExam(exam, editable) {
+    const wrap = document.createElement("div");
+    wrap.className = "card p-2 bg-light border-0";
+
+    wrap.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="small text-muted">PDF associati all’esame</div>
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-sm btn-outline-primary" data-act="add" ${
+            editable ? "" : "disabled"
+          }>
+            <i class="fa-solid fa-file-arrow-up me-1"></i>Aggiungi PDF
+          </button>
+          <input type="file" accept="application/pdf" class="d-none" data-act="file" multiple />
+        </div>
+      </div>
+
+      <div class="small mt-2 text-muted" data-act="status"></div>
+
+      <div class="mt-2 d-grid gap-2" data-act="list"></div>
+      <div class="small text-muted mt-1" data-act="empty">Nessun PDF caricato.</div>
+    `;
+
+    const btnAdd = wrap.querySelector('[data-act="add"]');
+    const fileInput = wrap.querySelector('[data-act="file"]');
+    const status = wrap.querySelector('[data-act="status"]');
+    const list = wrap.querySelector('[data-act="list"]');
+    const empty = wrap.querySelector('[data-act="empty"]');
+
+    function setStatus(msg, kind = "muted") {
+      const cls =
+        kind === "success" ? "text-success" : kind === "danger" ? "text-danger" : "text-muted";
+      status.className = `small mt-2 ${cls}`;
+      status.textContent = msg || "";
+    }
+
+    async function render() {
+      list.innerHTML = "";
+      empty.classList.add("d-none");
+
+      const items = await listMaterials(exam.id);
+      if (!items.length) {
+        empty.classList.remove("d-none");
+        return;
+      }
+
+      for (const it of items) {
+        const row = document.createElement("div");
+        row.className = "card p-2 border-0 shadow-sm";
+        row.innerHTML = `
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div class="small">
+              <i class="fa-solid fa-file-pdf me-2 text-danger"></i>
+              ${utils.escapeHtml(it.filename || ("PDF #" + it.id))}
+              <div class="text-muted small">${utils.safeDate(it.uploaded_at)}</div>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" type="button" title="Apri" data-act="open">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" type="button" title="Rimuovi" data-act="del" ${
+                editable ? "" : "disabled"
+              }>
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+
+        row.querySelector('[data-act="open"]').onclick = () => openMaterial(exam.id, it.id);
+
+        row.querySelector('[data-act="del"]').onclick = async () => {
+          if (!editable) return;
+          const delBtn = row.querySelector('[data-act="del"]');
+          const openBtn = row.querySelector('[data-act="open"]');
+
+          try {
+            delBtn.disabled = true;
+            openBtn.disabled = true;
+            await deleteMaterial(exam.id, it.id);
+            setStatus("File rimosso.", "success");
+            await render();
+          } catch (e) {
+            setStatus(`Errore rimozione: ${e?.message || "errore"}`, "danger");
+            delBtn.disabled = false;
+            openBtn.disabled = false;
+          }
+        };
+
+        list.appendChild(row);
+      }
+    }
+
+    btnAdd?.addEventListener("click", () => {
+      if (!editable) return;
+      fileInput.value = "";
+      fileInput.click();
+    });
+
+    fileInput?.addEventListener("change", async () => {
+      if (!editable) return;
+      const files = Array.from(fileInput.files || []);
+      if (!files.length) return;
+
+      btnAdd.disabled = true;
+      setStatus("Upload in corso...", "muted");
+
+      try {
+        for (const f of files) await uploadMaterialPdfToExam(exam.id, f);
+        setStatus("Upload completato.", "success");
+        await render();
+      } catch (e) {
+        setStatus(`Errore upload: ${e?.message || "errore"}`, "danger");
+      } finally {
+        btnAdd.disabled = false;
+        fileInput.value = "";
+      }
+    });
+
+    render().catch((e) => setStatus(`Errore caricamento lista: ${e?.message || "errore"}`, "danger"));
+    return wrap;
+  }
+
+  // ==========================
   // Accordion hydration (dettagli + publish + submissions)
   // ==========================
   async function hydrateExamAccordion(exam, bodyEl) {
@@ -444,7 +739,9 @@
 
     // Questions
     const qs = utils.getQuestions(exam);
-    const qSummary = qs.length ? `<span>${qs.length} domande</span>` : `<span class="text-muted">0 domande</span>`;
+    const qSummary = qs.length
+      ? `<span>${qs.length} domande</span>`
+      : `<span class="text-muted">0 domande</span>`;
 
     const qRow = renderFieldRow({
       label: "Domande",
@@ -507,7 +804,9 @@
 
     // Criteria
     const cs = utils.getCriteria(exam);
-    const cSummary = cs.length ? `<span>${cs.length} criteri</span>` : `<span class="text-muted">0 criteri</span>`;
+    const cSummary = cs.length
+      ? `<span>${cs.length} criteri</span>`
+      : `<span class="text-muted">0 criteri</span>`;
 
     const cRow = renderFieldRow({
       label: "Criteri",
@@ -567,7 +866,24 @@
     };
     details.appendChild(cRow);
 
-    // AI config
+    // ✅ Materials (sempre visibile)
+    const matWrap = document.createElement("div");
+    matWrap.className = "py-1";
+    matWrap.innerHTML = `
+      <div class="d-flex align-items-start justify-content-between gap-2">
+        <div class="me-2">
+          <div class="small text-muted">Materiale (PDF)</div>
+          <div class="small text-muted">Visualizza, aggiungi o rimuovi PDF associati all’esame.</div>
+        </div>
+      </div>
+    `;
+    const matSlot = document.createElement("div");
+    matSlot.className = "mt-2";
+    matSlot.appendChild(makeMaterialsBlockForExistingExam(exam, editable));
+    matWrap.appendChild(matSlot);
+    details.appendChild(matWrap);
+
+    // ✅ AI config: (identico al tuo originale, reinserito completo)
     const ai = exam.openai_schema_json || null;
     let aiSummary = `<span class="text-muted">—</span>`;
     try {
@@ -607,13 +923,17 @@
               </div>
 
               <div class="col-12 d-flex align-items-center gap-2 mt-1">
-                <input class="form-check-input" type="checkbox" id="editAiHonors" ${honorsV ? "checked" : ""}>
+                <input class="form-check-input" type="checkbox" id="editAiHonors" ${
+                  honorsV ? "checked" : ""
+                }>
                 <label class="form-check-label" for="editAiHonors">Permetti honors</label>
               </div>
 
               <div class="col-12">
                 <label class="form-label mb-1 small text-muted">Note per AI (opzionale)</label>
-                <input type="text" class="form-control" id="editAiNotes" value="${utils.escapeHtml(notesV)}">
+                <input type="text" class="form-control" id="editAiNotes" value="${utils.escapeHtml(
+                  notesV,
+                )}">
               </div>
 
               <div class="col-12 d-flex justify-content-end gap-2 mt-2">
@@ -680,7 +1000,6 @@
     detailsCard.appendChild(details);
     bodyEl.appendChild(detailsCard);
 
-    // Submissions block (delegato)
     await NS.submissions.loadIntoExamAccordion(exam, bodyEl);
   }
 
@@ -747,17 +1066,18 @@
         return;
       }
 
-      for (const exam of items) {
-        container.appendChild(renderExamCard(exam));
-      }
+      for (const exam of items) container.appendChild(renderExamCard(exam));
     } catch (e) {
       if (status) status.textContent = "";
-      if (container) container.innerHTML = `<div class="alert alert-danger">Errore: ${utils.escapeHtml(e.message)}</div>`;
+      if (container)
+        container.innerHTML = `<div class="alert alert-danger">Errore: ${utils.escapeHtml(
+          e.message,
+        )}</div>`;
     }
   }
 
   // ==========================
-  // Create exam modal (come prima)
+  // Create exam modal (DRAFT + FINAL via PUT /exams/{id})
   // ==========================
   function initCreateExamModal() {
     const ceTitle = document.getElementById("ceTitle");
@@ -778,6 +1098,9 @@
 
     const btnAddQuestion = document.getElementById("btnAddQuestion");
     const btnAddCriterion = document.getElementById("btnAddCriterion");
+
+    const fileInput = document.getElementById("globalMaterialPdfInput");
+    const createModalEl = document.getElementById("createExamModal");
 
     let isSubmittingExam = false;
 
@@ -893,6 +1216,13 @@
 
       addQuestionRow("", 10);
       addCriterionRow("Correttezza", 1);
+
+      createdExamIdForUpload = null;
+      createdExamIsDraft = false;
+      if (fileInput) fileInput.value = "";
+      setUploadStatus("");
+      renderCreateMaterialsList([]);
+      setCreatedExamId(null);
     }
 
     async function submitCreateExam() {
@@ -927,30 +1257,48 @@
         return;
       }
 
-      const schemaObj = buildAISchemaJson();
-
       const payload = {
         title,
         description: ceDescription.value.trim() || null,
         questions_json: { questions: q },
         rubric_json: { criteria: c },
-        openai_schema_json: schemaObj,
+        openai_schema_json: buildAISchemaJson(),
         is_published: !!cePublished.checked,
       };
 
       ceSubmitBtn.disabled = true;
-      ceSubmitBtn.textContent = "Creazione...";
+      ceSubmitBtn.textContent = "Salvataggio...";
 
       try {
-        await window.DASH.api("/exams", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
+        // ✅ se ho una bozza: FINALIZZO facendo PUT /exams/{id} (mantiene i materiali)
+        if (createdExamIdForUpload && createdExamIsDraft) {
+          await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+          createdExamIsDraft = false;
+          setCreatedExamId(createdExamIdForUpload, { isDraft: false });
+        } else if (!createdExamIdForUpload) {
+          // nessuna bozza (draft non supportato) -> creo esame normale
+          const created = await window.DASH.api("/exams", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          setCreatedExamId(created?.id, { isDraft: false });
+        } else {
+          // già esame vero -> aggiornamento
+          await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          });
+        }
 
         await loadTeacherMyExams();
-
+        setUploadStatus("Esame salvato. I PDF (se caricati) restano associati.", "success");
+        await refreshCreateMaterialsList();
+        // ✅ chiudi la modale Bootstrap
         const modalEl = document.getElementById("createExamModal");
-        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        bootstrap.Modal.getInstance(modalEl)?.hide();
       } catch (e) {
         ceError.textContent = e?.message || "Errore durante la creazione.";
         ceError.classList.remove("d-none");
@@ -961,8 +1309,57 @@
       }
     }
 
-    ceSubmitBtn.onclick = () => submitCreateExam();
+    // ✅ Quando apro il modale: provo a creare la bozza automaticamente
+    createModalEl?.addEventListener("shown.bs.modal", async () => {
+      try {
+        // NON resetto tutto qui se vuoi mantenere campi tra aperture; ma per sicurezza sì:
+        // resetCreateExamForm();
+        setCreatedExamId(null);
+        renderCreateMaterialsList([]);
+        setUploadStatus("Preparazione bozza per upload...", "muted");
 
+        await ensureDraftExamId();
+        await refreshCreateMaterialsList();
+        setUploadStatus("Bozza pronta. Puoi caricare PDF subito.", "success");
+      } catch (e) {
+        setCreatedExamId(null);
+        renderCreateMaterialsList([]);
+        // fallback: draft non esiste
+        setUploadButtonEnabled(false);
+        setUploadStatus("Draft non disponibile: crea l’esame per caricare PDF.", "danger");
+      }
+    });
+
+    createModalEl?.addEventListener("hidden.bs.modal", () => {
+      resetCreateExamForm();
+    });
+
+    // ✅ Upload: se non ho examId, creo bozza al volo (se supportata)
+    fileInput?.addEventListener("change", async () => {
+      const files = Array.from(fileInput.files || []);
+      if (!files.length) return;
+
+      try {
+        if (!createdExamIdForUpload) {
+          await ensureDraftExamId();
+        }
+
+        setUploadButtonEnabled(false);
+        setUploadStatus("Upload in corso...", "muted");
+
+        for (const f of files) await uploadMaterialPdfToExam(createdExamIdForUpload, f);
+
+        setUploadStatus("Upload completato.", "success");
+        await refreshCreateMaterialsList();
+      } catch (e) {
+        setUploadStatus(`Errore upload: ${e?.message || "errore"}`, "danger");
+      } finally {
+        setUploadButtonEnabled(true);
+        fileInput.value = "";
+      }
+    });
+
+    ceSubmitBtn.onclick = () => submitCreateExam();
     exams.resetCreateExamForm = resetCreateExamForm;
   }
 

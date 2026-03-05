@@ -1,5 +1,7 @@
 from datetime import datetime
-from sqlalchemy.orm import Session
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.revoked_token import RevokedToken
 
@@ -7,23 +9,28 @@ from app.models.revoked_token import RevokedToken
 class RevokedTokenRepository:
     # Verifica se un token è stato revocato (GET)
     @staticmethod
-    def is_revoked(db: Session, jti: str) -> bool:
-        row = (
-            db.query(RevokedToken)
-            .filter(RevokedToken.jti == jti, RevokedToken.is_active == True)
-            .first()
+    async def is_revoked(db: AsyncSession, jti: str) -> bool:
+        stmt = (
+            select(RevokedToken)
+            .where(
+                RevokedToken.jti == jti,
+                RevokedToken.is_active.is_(True),
+            )
+            .limit(1)
         )
+        result = await db.execute(stmt)
+        row = result.scalars().first()
         return row is not None
 
     # Per revocare un token inserendolo in una blacklist (DELETE/PUT)
     @staticmethod
-    def revoke(
-        db: Session,
+    async def revoke(
+        db: AsyncSession,
         *,
         jti: str,
         user_id: int,
         expires_at: datetime,
-        revoked_at: datetime
+        revoked_at: datetime,
     ) -> RevokedToken:
         row = RevokedToken(
             jti=jti,
@@ -33,5 +40,8 @@ class RevokedTokenRepository:
             is_active=True,
         )
         db.add(row)
-        db.flush()
+
+        # in async, flush è awaitable
+        await db.flush()
+
         return row

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_role
 from app.models.user import User
@@ -18,7 +18,7 @@ async def run_ai_evaluation(
     submission_id: int,
     payload: AIEvaluateRequest,
     response: Response,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     teacher: User = Depends(require_role("teacher")),
 ):
     evaluation, created = await AIEvaluationService.run_ai_evaluation(

@@ -1,18 +1,16 @@
 {% extends "base.html" %} {% block title %}Dashboard Exams{% endblock %} {%
 block body %}
+
 <!-- Header -->
 <header class="py-3" style="background-color: #848789">
   <div class="container">
     <div class="d-flex align-items-center justify-content-between">
-      <!-- Left -->
       <div class="text-white fw-semibold">Dashboard Exams</div>
 
-      <!-- Center -->
       <div class="text-white-50 small text-center" id="userCenterLabel">
         Caricamento utente...
       </div>
 
-      <!-- Right logout icon -->
       <button
         class="btn btn-sm btn-outline-light"
         id="logoutBtn"
@@ -26,9 +24,7 @@ block body %}
   </div>
 </header>
 
-<!-- Content -->
 <main class="container py-4 flex-grow-1">
-  <!-- Toolbar top-right: + exam (teacher) -->
   <div class="d-flex justify-content-end mb-3">
     <button
       id="btnCreateExam"
@@ -42,17 +38,14 @@ block body %}
 
   {% block content %}
 
-  <!-- TEACHER: ESAMI -->
   <section id="viewTeacherExams" class="d-none">
     <div class="d-flex align-items-center justify-content-between mb-2">
       <h2 class="h6 mb-0">I miei esami</h2>
       <span id="examsStatus" class="small text-muted"></span>
     </div>
-
     <div id="examsList" class="d-grid gap-2"></div>
   </section>
 
-  <!-- TEACHER: STUDENTI (placeholder) -->
   <section id="viewTeacherStudents" class="d-none">
     <div class="card shadow-sm">
       <div class="card-body">
@@ -64,7 +57,6 @@ block body %}
     </div>
   </section>
 
-  <!-- TEACHER: FINAL GRADES (placeholder) -->
   <section id="viewTeacherFinals" class="d-none">
     <div class="card shadow-sm">
       <div class="card-body">
@@ -76,7 +68,6 @@ block body %}
     </div>
   </section>
 
-  <!-- STUDENT: ESAMI DISPONIBILI (placeholder) -->
   <section id="viewStudentAvailable" class="d-none">
     <div class="card shadow-sm">
       <div class="card-body">
@@ -88,7 +79,6 @@ block body %}
     </div>
   </section>
 
-  <!-- STUDENT: ESAMI COMPLETATI + VOTO (placeholder) -->
   <section id="viewStudentCompleted" class="d-none">
     <div class="card shadow-sm">
       <div class="card-body">
@@ -117,19 +107,15 @@ block body %}
         </div>
 
         <div class="modal-body">
-          <!-- META -->
           <div id="subModalMeta" class="small text-muted mb-3"></div>
 
-          <!-- ANSWERS -->
           <div class="mb-2 fw-semibold">Answers</div>
           <div id="subModalAnswers" class="d-grid gap-2 mb-4"></div>
           <div id="subModalEmpty" class="text-muted small d-none mb-4">
             Nessuna risposta trovata.
           </div>
 
-          <!-- EVALUATIONS ROW -->
           <div class="row g-3 mb-4" id="evalCardsRow">
-            <!-- STUDENT -->
             <div class="col-md-4">
               <div class="card border-success h-100">
                 <div
@@ -141,17 +127,16 @@ block body %}
               </div>
             </div>
 
-            <!-- TEACHER -->
+            <!-- ✅ QUI: sostituiamo solo label, ma lasciamo ID evalTeacherBody -->
             <div class="col-md-4">
               <div class="card border-danger h-100">
                 <div class="card-header bg-danger text-white small fw-semibold">
-                  Valutazione docente
+                  Valutazioni peer
                 </div>
                 <div class="card-body small" id="evalTeacherBody"></div>
               </div>
             </div>
 
-            <!-- AI -->
             <div class="col-md-4">
               <div class="card border-primary h-100">
                 <div
@@ -164,7 +149,6 @@ block body %}
             </div>
           </div>
 
-          <!-- FINAL GRADE BUTTON -->
           <div class="text-center mb-3">
             <button
               class="btn btn-dark btn-sm"
@@ -175,7 +159,6 @@ block body %}
             </button>
           </div>
 
-          <!-- FINAL GRADE CONFIG (COLLAPSE) -->
           <div class="collapse" id="finalGradeCollapse">
             <div class="card border-0 shadow-sm">
               <div class="card-body">
@@ -197,9 +180,10 @@ block body %}
                     />
                   </div>
 
+                  <!-- ✅ QUI: cambia solo label, ID resta wTeacher -->
                   <div class="col-md-4">
                     <label class="form-label small text-muted mb-1"
-                      >Peso Docente</label
+                      >Peso Peer</label
                     >
                     <input
                       id="wTeacher"
@@ -259,7 +243,6 @@ block body %}
             </div>
           </div>
 
-          <!-- FINAL GRADE CARD -->
           <div id="finalGradeContainer"></div>
         </div>
 
@@ -275,8 +258,7 @@ block body %}
       </div>
     </div>
   </div>
-
-  <!-- MODALE: CREAZIONE ESAME (NO JSON MANUALE) -->
+  <!-- MODALE: CREAZIONE ESAME -->
   <div class="modal fade" id="createExamModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
@@ -294,6 +276,8 @@ block body %}
 
         <div class="modal-body">
           <form id="createExamForm" novalidate>
+            <input type="hidden" id="ceDraftExamId" />
+
             <div class="row g-3">
               <div class="col-12">
                 <label class="form-label">Titolo</label>
@@ -316,7 +300,6 @@ block body %}
                 ></textarea>
               </div>
 
-              <!-- QUESTIONS (UI) -->
               <div class="col-12">
                 <label class="form-label fw-semibold">Domande</label>
                 <div id="questionsContainer" class="d-grid gap-2"></div>
@@ -332,7 +315,6 @@ block body %}
                 </div>
               </div>
 
-              <!-- RUBRIC (UI) -->
               <div class="col-12">
                 <label class="form-label fw-semibold mt-3"
                   >Criteri di valutazione</label
@@ -351,7 +333,6 @@ block body %}
                 </div>
               </div>
 
-              <!-- AI CONFIG (UI -> openai_schema_json) -->
               <div class="col-12">
                 <label class="form-label fw-semibold mt-3"
                   >Configurazione AI</label
@@ -410,6 +391,45 @@ block body %}
                 </div>
               </div>
 
+              <!-- ✅ MATERIAL UPLOAD (PDF) -->
+              <div class="col-12">
+                <label class="form-label fw-semibold mt-3"
+                  >Materiale del corso (PDF)</label
+                >
+
+                <div class="card p-3 bg-light border-0">
+                  <div class="d-flex flex-wrap align-items-center gap-2">
+                    <!-- ✅ LABEL che apre il file picker nativamente -->
+                    <label
+                      id="btnUploadMaterialPdf"
+                      for="globalMaterialPdfInput"
+                      class="btn btn-sm btn-outline-primary mb-0"
+                      role="button"
+                      tabindex="0"
+                    >
+                      <i class="fa-solid fa-file-arrow-up me-1"></i>Carica PDF
+                    </label>
+
+                    <span class="small text-muted" id="materialUploadHint">
+                      Puoi caricare PDF anche prima di creare l’esame.
+                    </span>
+                  </div>
+
+                  <div
+                    class="small mt-2 text-muted"
+                    id="materialUploadStatus"
+                  ></div>
+
+                  <div class="mt-3">
+                    <div class="small fw-semibold mb-2">File caricati</div>
+                    <div id="materialPdfList" class="d-grid gap-2"></div>
+                    <div id="materialPdfEmpty" class="small text-muted">
+                      Nessun PDF caricato.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div class="col-12 d-flex align-items-center gap-2">
                 <input
                   class="form-check-input"
@@ -448,19 +468,103 @@ block body %}
     </div>
   </div>
 
+  <!-- MODALE: EDIT (placeholder UI) -->
+  <div class="modal fade" id="editExamModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header" style="background-color: #848789">
+          <h5 class="modal-title text-white mb-0" id="eeModalTitle">
+            Modifica esame
+          </h5>
+          <button
+            type="button"
+            class="btn-close btn-close-white"
+            data-bs-dismiss="modal"
+            aria-label="Chiudi"
+          ></button>
+        </div>
+
+        <div class="modal-body">
+          <input type="hidden" id="eeExamId" />
+
+          <div class="mb-3">
+            <div class="fw-semibold">Materiale del corso (PDF)</div>
+            <div class="text-muted small">
+              Visualizza i file caricati, rimuovili o aggiungine di nuovi.
+            </div>
+          </div>
+
+          <div class="card p-3 bg-light border-0">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <label
+                id="btnEditUploadMaterialPdf"
+                for="globalMaterialPdfInput"
+                class="btn btn-sm btn-outline-primary mb-0"
+                role="button"
+                tabindex="0"
+              >
+                <i class="fa-solid fa-file-arrow-up me-1"></i>Aggiungi PDF
+              </label>
+
+              <span class="small text-muted" id="editMaterialUploadHint">
+                I PDF vengono associati a questo esame.
+              </span>
+            </div>
+
+            <div
+              class="small mt-2 text-muted"
+              id="editMaterialUploadStatus"
+            ></div>
+
+            <div class="mt-3">
+              <div class="small fw-semibold mb-2">File caricati</div>
+              <div id="editMaterialPdfList" class="d-grid gap-2"></div>
+              <div id="editMaterialPdfEmpty" class="small text-muted">
+                Nessun PDF caricato.
+              </div>
+            </div>
+          </div>
+
+          <div id="eeOtherSections" class="mt-4"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+            type="button"
+          >
+            Chiudi
+          </button>
+          <button class="btn btn-dark" type="button" id="btnSaveExamEdits">
+            Salva modifiche
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {% endblock %}
 </main>
 
-<!-- Footer primary bar -->
 <footer
   class="mt-auto"
   style="height: 44px; background-color: #848789"
 ></footer>
+
+<!-- ✅ FILE INPUT GLOBALE: NON display:none -->
+<input
+  id="globalMaterialPdfInput"
+  type="file"
+  accept="application/pdf"
+  class="visually-hidden"
+  multiple
+/>
+
 {% block scripts %}
 <script src="{{ url_for('static', path='js/teacher/base.js') }}"></script>
 <script src="{{ url_for('static', path='js/teacher/modal.js') }}"></script>
 <script src="{{ url_for('static', path='js/teacher/submissions.js') }}"></script>
 <script src="{{ url_for('static', path='js/teacher/exams.js') }}"></script>
 <script src="{{ url_for('static', path='js/teacher/index.js') }}"></script>
-
 {% endblock %} {% endblock %}

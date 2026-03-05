@@ -8,26 +8,30 @@
   // ==========================
   const utils = (NS.utils = NS.utils || {});
 
-  utils.escapeHtml = utils.escapeHtml || function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, (m) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[m],
-    );
-  };
+  utils.escapeHtml =
+    utils.escapeHtml ||
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (m) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[m],
+      );
+    };
 
-  utils.safeDate = utils.safeDate || function safeDate(dt) {
-    if (!dt) return "—";
-    try {
-      return new Date(dt).toLocaleString();
-    } catch {
-      return String(dt);
-    }
-  };
+  utils.safeDate =
+    utils.safeDate ||
+    function safeDate(dt) {
+      if (!dt) return "—";
+      try {
+        return new Date(dt).toLocaleString();
+      } catch {
+        return String(dt);
+      }
+    };
 
   utils.getQuestions =
     utils.getQuestions ||
@@ -74,6 +78,7 @@
   const subModalEmpty = document.getElementById("subModalEmpty");
 
   const evalStudentBody = document.getElementById("evalStudentBody");
+  // ✅ rimane evalTeacherBody come base, ma dentro ci mettiamo PEER UI
   const evalTeacherBody = document.getElementById("evalTeacherBody");
   const evalAiBody = document.getElementById("evalAiBody");
 
@@ -83,6 +88,7 @@
   // Final grade collapse refs
   const finalGradeCollapseEl = document.getElementById("finalGradeCollapse");
   const wStudentEl = document.getElementById("wStudent");
+  // ✅ rimane wTeacher come base, ma è il peso PEER
   const wTeacherEl = document.getElementById("wTeacher");
   const wAiEl = document.getElementById("wAi");
   const weightsSumEl = document.getElementById("weightsSum");
@@ -96,6 +102,9 @@
     : null;
 
   let currentSubmissionId = null;
+
+  // ✅ peer gate state
+  let peerClosedAt = null;
 
   function hideWeightsError() {
     if (!weightsErrorEl) return;
@@ -119,7 +128,7 @@
     hideWeightsError();
 
     const ws = getInt1to10(wStudentEl?.value);
-    const wt = getInt1to10(wTeacherEl?.value);
+    const wt = getInt1to10(wTeacherEl?.value); // ✅ PEER
     const wa = getInt1to10(wAiEl?.value);
 
     if (ws === null || wt === null || wa === null) {
@@ -146,12 +155,14 @@
   function weightsToDecimals(ws, wt, wa) {
     return {
       self_weight: ws / 10,
-      teacher_weight: wt / 10,
+      teacher_weight: wt / 10, // ✅ compat: teacher_weight usato come PEER weight
       ai_weight: wa / 10,
     };
   }
 
   function resetEvalUI() {
+    peerClosedAt = null;
+
     if (evalStudentBody) {
       evalStudentBody.innerHTML = `
         <div class="d-flex align-items-center gap-2 text-muted">
@@ -160,7 +171,8 @@
         </div>
       `;
     }
-    if (evalTeacherBody) evalTeacherBody.innerHTML = `<div class="text-muted">Caricamento...</div>`;
+
+    if (evalTeacherBody) evalTeacherBody.innerHTML = `<div class="text-muted">Caricamento peer...</div>`;
     if (evalAiBody) evalAiBody.innerHTML = `<div class="text-muted">Caricamento...</div>`;
 
     if (btnComputeFinalGrade) btnComputeFinalGrade.disabled = true;
@@ -174,34 +186,28 @@
   }
 
   function normalizeEvaluationsPayload(raw) {
-    const out = { student: null, teacher: null, ai: null };
+    const out = { student: null, ai: null, peer: [] };
     if (!raw) return out;
-
-    if (raw.student || raw.teacher || raw.ai || raw.self) {
-      out.student = raw.student ?? raw.self ?? null;
-      out.teacher = raw.teacher ?? null;
-      out.ai = raw.ai ?? null;
-      return out;
-    }
 
     const arr = raw.evaluations || raw.items || raw.data || null;
     if (Array.isArray(arr)) {
       for (const ev of arr) {
         const t = ev?.evaluator_type;
         if (t === "student") out.student = ev;
-        else if (t === "teacher") out.teacher = ev;
         else if (t === "ai") out.ai = ev;
+        else if (t === "peer") out.peer.push(ev);
       }
       return out;
     }
 
+    // fallback
     for (const k of Object.keys(raw)) {
       const ev = raw[k];
       if (!ev || typeof ev !== "object") continue;
       const t = ev?.evaluator_type;
       if (t === "student") out.student = ev;
-      if (t === "teacher") out.teacher = ev;
       if (t === "ai") out.ai = ev;
+      if (t === "peer") out.peer.push(ev);
     }
 
     return out;
@@ -229,44 +235,154 @@
     `;
   }
 
-  function renderTeacherEval(submissionId, ev) {
+  function buildPeerCommentsCarousel(submissionId, comments) {
+    const items = (comments || []).filter((c) => String(c || "").trim().length > 0);
+    if (!items.length) {
+      return `<div class="text-muted small mt-2">Nessun commento peer disponibile.</div>`;
+    }
+
+    const carouselId = `peerCommentsCarousel_${submissionId}`;
+
+    const slides = items
+      .map(
+        (c, idx) => `
+        <div class="carousel-item ${idx === 0 ? "active" : ""}">
+          <div class="border rounded-3 p-2 bg-light">
+            <div class="small">${utils.escapeHtml(c)}</div>
+          </div>
+        </div>
+      `,
+      )
+      .join("");
+
+    return `
+      <div id="${carouselId}" class="carousel slide mt-2" data-bs-ride="false">
+        <div class="carousel-inner">
+          ${slides}
+        </div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#${carouselId}" data-bs-slide="prev">
+          <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Prev</span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#${carouselId}" data-bs-slide="next">
+          <span class="carousel-control-next-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Next</span>
+        </button>
+        <div class="small text-muted text-center mt-1">${items.length} commenti</div>
+      </div>
+    `;
+  }
+
+  function renderPeerGate(submissionId) {
     if (!evalTeacherBody) return;
 
-    if (!ev) {
-      evalTeacherBody.innerHTML = `
-        <label class="form-label small text-muted mb-1">Score (0-30)</label>
-        <input id="teacherScore"
-              class="form-control mb-2"
-              type="number"
-              min="0"
-              max="30"
-              step="1"
-              placeholder="Score (0-30)">
+    const w = getInt1to10(wTeacherEl?.value) ?? 6;
 
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" id="teacherHonors">
-          <label class="form-check-label" for="teacherHonors">Lode</label>
-        </div>
+    evalTeacherBody.innerHTML = `
+      <div class="fw-semibold">Peer review</div>
+      <div class="small text-muted">
+        Chiudi le peer evaluation per questa submission e calcola la media.
+      </div>
 
-        <textarea id="teacherComment"
-                  class="form-control mb-2"
-                  placeholder="Comment"></textarea>
+      <button class="btn btn-sm btn-dark mt-2" id="btnClosePeerReviews">
+        <i class="fa-solid fa-lock me-1"></i>Chiudi peer & calcola media
+      </button>
 
-        <button class="btn btn-sm btn-danger"
-                id="btnSaveTeacherEval"
-                onclick="submitTeacherEvaluation(${submissionId})">
-          Salva valutazione
-        </button>
-      `;
+      <div class="small text-muted mt-2">Peso corrente: <strong>${w}</strong>/10</div>
+
+      <div id="peerGateError" class="alert alert-danger d-none mt-2 mb-0 small"></div>
+    `;
+
+    const btn = document.getElementById("btnClosePeerReviews");
+    const err = document.getElementById("peerGateError");
+
+    btn?.addEventListener("click", async () => {
+      btn.disabled = true;
+      const old = btn.innerHTML;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>Chiusura...`;
+
+      if (err) {
+        err.classList.add("d-none");
+        err.textContent = "";
+      }
+
+      try {
+        await window.DASH.api(`/evaluations/peer/close/${submissionId}`, { method: "POST" });
+        await renderPeerSummary(submissionId);
+        // ricarico anche enable/disable final grade
+        await loadEvaluations(submissionId);
+      } catch (e) {
+        if (err) {
+          err.textContent = e?.message || "Errore chiusura peer review.";
+          err.classList.remove("d-none");
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = old;
+      }
+    });
+  }
+
+  async function renderPeerSummary(submissionId) {
+    if (!evalTeacherBody) return;
+
+    // 1) summary
+    let summary = null;
+    try {
+      summary = await window.DASH.api(`/evaluations/peer/summary/${submissionId}`);
+    } catch {
+      summary = null;
+    }
+
+    peerClosedAt = summary?.closed_at || null;
+
+    // 2) comments from by-submission (peer completed)
+    let comments = [];
+    try {
+      const raw = await window.DASH.api(`/evaluations/by-submission/${submissionId}`);
+      const norm = normalizeEvaluationsPayload(raw);
+      comments = (norm.peer || [])
+        .filter((x) => x?.status === "completed")
+        .map((x) => x?.comment)
+        .filter(Boolean);
+    } catch {
+      comments = [];
+    }
+
+    if (!peerClosedAt) {
+      renderPeerGate(submissionId);
       return;
     }
 
     const w = getInt1to10(wTeacherEl?.value) ?? 6;
+    const avg = summary?.avg;
+    const count = summary?.count ?? 0;
+    const min = summary?.min;
+    const max = summary?.max;
+
     evalTeacherBody.innerHTML = `
-      <div>Score: <strong>${ev.score}</strong></div>
-      <div>Honors: ${ev.honors ? "yes" : "no"}</div>
-      <div class="mt-2">${utils.escapeHtml(ev.comment)}</div>
-      <div class="mt-2 text-muted">Peso corrente: <strong>${w}</strong>/10</div>
+      <div class="fw-semibold d-flex align-items-center justify-content-between">
+        <span>Peer summary</span>
+        <span class="badge bg-secondary">Chiusa</span>
+      </div>
+
+      <div class="mt-2">
+        <div>Media: <strong>${avg == null ? "—" : Number(avg).toFixed(2)}</strong></div>
+        <div class="small text-muted">
+          N=${count}
+          ${min != null ? ` • min ${min}` : ""}
+          ${max != null ? ` • max ${max}` : ""}
+        </div>
+        <div class="small text-muted mt-1">
+          Closed: ${utils.safeDate(peerClosedAt)}
+        </div>
+        <div class="small text-muted mt-2">Peso corrente: <strong>${w}</strong>/10</div>
+      </div>
+
+      <div class="mt-2">
+        <div class="small fw-semibold mb-1">Commenti peer</div>
+        ${buildPeerCommentsCarousel(submissionId, comments)}
+      </div>
     `;
   }
 
@@ -299,8 +415,8 @@
     `;
   }
 
-  function checkFinalGradeReady(student, teacher, ai) {
-    const ready = !!(student && teacher && ai);
+  function checkFinalGradeReady(student, ai) {
+    const ready = !!(student && ai && peerClosedAt);
     if (btnComputeFinalGrade) btnComputeFinalGrade.disabled = !ready;
     if (!ready) bsFinalCollapse?.hide();
   }
@@ -314,7 +430,7 @@
         </div>
       `;
     }
-    if (evalTeacherBody) evalTeacherBody.innerHTML = `<div class="text-muted">Caricamento...</div>`;
+    if (evalTeacherBody) evalTeacherBody.innerHTML = `<div class="text-muted">Caricamento peer...</div>`;
     if (evalAiBody) evalAiBody.innerHTML = `<div class="text-muted">Caricamento...</div>`;
 
     let raw;
@@ -323,71 +439,22 @@
     } catch (_) {
       if (evalTeacherBody)
         evalTeacherBody.innerHTML = `<div class="text-danger small">Errore caricamento valutazioni.</div>`;
-      if (evalAiBody) evalAiBody.innerHTML = `<div class="text-danger small">Errore caricamento valutazioni.</div>`;
+      if (evalAiBody)
+        evalAiBody.innerHTML = `<div class="text-danger small">Errore caricamento valutazioni.</div>`;
       return;
     }
 
     const norm = normalizeEvaluationsPayload(raw);
     const studentEval = norm.student || null;
-    const teacherEval = norm.teacher || null;
     const aiEval = norm.ai || null;
 
     renderStudentEval(studentEval);
-    renderTeacherEval(submissionId, teacherEval);
     renderAiEval(submissionId, aiEval);
 
-    checkFinalGradeReady(studentEval, teacherEval, aiEval);
-  }
+    // ✅ peer: gate oppure summary
+    await renderPeerSummary(submissionId);
 
-  async function submitTeacherEvaluation(submissionId) {
-    const scoreEl = document.getElementById("teacherScore");
-    const honorsEl = document.getElementById("teacherHonors");
-    const commentEl = document.getElementById("teacherComment");
-
-    const score = Number(scoreEl?.value);
-    const honors = !!honorsEl?.checked;
-    const comment = (commentEl?.value || "").trim();
-
-    if (!Number.isInteger(score) || score < 0 || score > 30) {
-      alert("Score deve essere un intero tra 0 e 30.");
-      return;
-    }
-    if (honors && score !== 30) {
-      alert("La lode è consentita solo con score = 30.");
-      return;
-    }
-    if (!comment) {
-      alert("Inserisci un commento.");
-      return;
-    }
-
-    const btn = document.getElementById("btnSaveTeacherEval");
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>Salvataggio...`;
-    }
-
-    try {
-      await window.DASH.api("/evaluations", {
-        method: "POST",
-        body: JSON.stringify({
-          submission_id: submissionId,
-          evaluator_type: "teacher",
-          score,
-          honors,
-          comment,
-        }),
-      });
-
-      await loadEvaluations(submissionId);
-    } catch (e) {
-      alert(e?.message || "Errore salvataggio valutazione teacher.");
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `Salva valutazione`;
-      }
-    }
+    checkFinalGradeReady(studentEval, aiEval);
   }
 
   async function runAiEvaluation(submissionId) {
@@ -452,7 +519,7 @@
           <div class="fw-semibold mb-2">Final Grade</div>
 
           <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
-            <div><strong>Teacher weight:</strong> ${Number(fg.teacher_weight).toFixed(2)}</div>
+            <div><strong>Peer weight:</strong> ${Number(fg.teacher_weight).toFixed(2)}</div>
             <div><strong>AI weight:</strong> ${Number(fg.ai_weight).toFixed(2)}</div>
             <div><strong>Self weight:</strong> ${Number(fg.self_weight).toFixed(2)}</div>
           </div>
@@ -525,7 +592,13 @@
   }
 
   // event binding per pesi/collapse
-  [wStudentEl, wTeacherEl, wAiEl].forEach((el) => el?.addEventListener("input", validateWeightsAndToggle));
+  [wStudentEl, wTeacherEl, wAiEl].forEach((el) =>
+    el?.addEventListener("input", () => {
+      validateWeightsAndToggle();
+      // aggiorna solo il peso mostrato nella card peer (se è già renderizzata)
+      if (currentSubmissionId) renderPeerSummary(currentSubmissionId);
+    }),
+  );
 
   btnCancelFinalGrade?.addEventListener("click", () => {
     hideWeightsError();
@@ -571,11 +644,9 @@
     bsFinalCollapse?.show();
   });
 
-  // exports (per inline onclick già presente in HTML)
+  // exports
   window.runAiEvaluation = runAiEvaluation;
-  window.submitTeacherEvaluation = submitTeacherEvaluation;
 
-  // exports per gli altri moduli
   modal.openSubmissionModal = openSubmissionModal;
   modal.loadEvaluations = loadEvaluations;
   modal.loadFinalGrade = loadFinalGrade;

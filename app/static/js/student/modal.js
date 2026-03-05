@@ -35,16 +35,25 @@
 
   utils.getQuestions =
     utils.getQuestions ||
-    function getQuestions(exam) {
-      return exam?.questions_json?.questions || [];
+    function getQuestions(examOrQ) {
+      // supporta:
+      // - exam.questions_json.questions
+      // - questions_json.questions
+      // - questions_json (array)
+      if (!examOrQ) return [];
+      const qj = examOrQ?.questions_json ?? examOrQ;
+      if (!qj) return [];
+      if (Array.isArray(qj)) return qj;
+      if (Array.isArray(qj?.questions)) return qj.questions;
+      return [];
     };
 
   utils.getQuestionText =
     utils.getQuestionText ||
-    function getQuestionText(exam, questionIndex) {
-      const qs = utils.getQuestions(exam);
+    function getQuestionText(examOrQ, questionIndex) {
+      const qs = utils.getQuestions(examOrQ);
       const q = qs?.[Number(questionIndex)] || null;
-      const txt = q?.text?.trim();
+      const txt = q?.text?.trim() || q?.question?.trim(); // supporta seed "question"
       return txt ? txt : `Domanda #${Number(questionIndex) + 1}`;
     };
 
@@ -71,7 +80,23 @@
   const fgFrontHintEl = document.getElementById("fgFrontHint");
   const fgBackBodyEl = document.getElementById("fgBackBody");
 
+  // ✅ Peer modal refs
+  const peerEvalModalEl = document.getElementById("peerEvalModal");
+  const peerEvalSubmissionTitleEl = document.getElementById("peerEvalSubmissionTitle");
+  const peerModalAnswersEl = document.getElementById("peerModalAnswers");
+  const peerModalEmptyEl = document.getElementById("peerModalEmpty");
+
+  const peerEvalScoreEl = document.getElementById("peerEvalScore");
+  const peerEvalCommentEl = document.getElementById("peerEvalComment");
+  const peerEvalErrorEl = document.getElementById("peerEvalError");
+  const peerEvalSuccessEl = document.getElementById("peerEvalSuccess");
+  const btnSubmitPeerEvalEl = document.getElementById("btnSubmitPeerEval");
+
   let JOIN_EXAM_ID = null;
+
+  // peer modal state
+  let PEER_CURRENT_TASK = null;
+  let PEER_ON_SUCCESS = null;
 
   function openJoinModal(exam) {
     JOIN_EXAM_ID = exam.id;
@@ -94,7 +119,7 @@
 
       fgBackBodyEl.innerHTML = `
         <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
-          <div><strong>Teacher:</strong> ${Number(fg.teacher_weight).toFixed(2)}</div>
+          <div><strong>Peer:</strong> ${Number(fg.peer_weight).toFixed(2)}</div>
           <div><strong>AI:</strong> ${Number(fg.ai_weight).toFixed(2)}</div>
           <div><strong>Self:</strong> ${Number(fg.self_weight).toFixed(2)}</div>
         </div>
@@ -164,6 +189,134 @@
     bootstrap.Modal.getOrCreateInstance(doneExamModalEl).show();
   }
 
+  // ==========================
+  // ✅ Peer modal helpers
+  // ==========================
+  function resetPeerModal() {
+    peerEvalErrorEl?.classList.add("d-none");
+    if (peerEvalErrorEl) peerEvalErrorEl.textContent = "";
+
+    peerEvalSuccessEl?.classList.add("d-none");
+
+    if (peerEvalScoreEl) peerEvalScoreEl.value = "";
+    if (peerEvalCommentEl) peerEvalCommentEl.value = "";
+
+    if (peerModalAnswersEl) peerModalAnswersEl.innerHTML = "";
+    peerModalEmptyEl?.classList.add("d-none");
+
+    if (btnSubmitPeerEvalEl) btnSubmitPeerEvalEl.disabled = false;
+  }
+
+  function renderPeerAnswers(task) {
+    if (!peerModalAnswersEl) return;
+
+    peerModalAnswersEl.innerHTML = "";
+    peerModalEmptyEl?.classList.add("d-none");
+
+    const sub = task?.submission || {};
+    // supporta entrambe le forme:
+    // - sub.questions_json
+    // - sub.exam.questions_json
+    const examOrQ = sub?.questions_json ? sub : sub?.exam ? sub.exam : null;
+
+    const answers = Array.isArray(sub?.answers) ? sub.answers : [];
+
+    if (!answers.length) {
+      peerModalEmptyEl?.classList.remove("d-none");
+      return;
+    }
+
+    answers
+      .slice()
+      .sort((a, b) => (a.question_index ?? 0) - (b.question_index ?? 0))
+      .forEach((a) => {
+        const qText = utils.getQuestionText(examOrQ, a.question_index);
+        const card = document.createElement("div");
+        card.className = "card shadow-sm";
+        card.innerHTML = `
+          <div class="card-body py-2">
+            <div class="small text-muted mb-1">${utils.escapeHtml(qText)}</div>
+            <div>${utils.escapeHtml(a.answer_text)}</div>
+          </div>
+        `;
+        peerModalAnswersEl.appendChild(card);
+      });
+  }
+
+  function openPeerEvalModal(task, opts = {}) {
+    PEER_CURRENT_TASK = task;
+    PEER_ON_SUCCESS = typeof opts.onSuccess === "function" ? opts.onSuccess : null;
+
+    resetPeerModal();
+
+    const sub = task?.submission || {};
+    const sid = sub?.id ?? "—";
+    if (peerEvalSubmissionTitleEl) peerEvalSubmissionTitleEl.textContent = `Submission anonima #${sid}`;
+
+    // ✅ render Q&A sopra
+    renderPeerAnswers(task);
+
+    bootstrap.Modal.getOrCreateInstance(peerEvalModalEl).show();
+  }
+
+  btnSubmitPeerEvalEl?.addEventListener("click", async () => {
+    if (!PEER_CURRENT_TASK) return;
+
+    const sub = PEER_CURRENT_TASK.submission || {};
+    const submissionId = Number(sub.id);
+
+    const score = Number(peerEvalScoreEl?.value);
+    const comment = (peerEvalCommentEl?.value || "").trim();
+
+    if (!Number.isFinite(score) || score < 0 || score > 30) {
+      if (peerEvalErrorEl) {
+        peerEvalErrorEl.textContent = "Inserisci un voto valido (0–30).";
+        peerEvalErrorEl.classList.remove("d-none");
+      }
+      return;
+    }
+    if (!comment) {
+      if (peerEvalErrorEl) {
+        peerEvalErrorEl.textContent = "Inserisci una motivazione.";
+        peerEvalErrorEl.classList.remove("d-none");
+      }
+      return;
+    }
+
+    btnSubmitPeerEvalEl.disabled = true;
+    const old = btnSubmitPeerEvalEl.innerHTML;
+    btnSubmitPeerEvalEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>Invio...`;
+
+    try {
+      await window.DASH.api("/evaluations", {
+        method: "POST",
+        body: JSON.stringify({
+          submission_id: submissionId,
+          evaluator_type: "peer",
+          score,
+          honors: false,
+          comment,
+          details_json: null,
+        }),
+      });
+
+      peerEvalSuccessEl?.classList.remove("d-none");
+
+      setTimeout(async () => {
+        bootstrap.Modal.getOrCreateInstance(peerEvalModalEl).hide();
+        if (PEER_ON_SUCCESS) await PEER_ON_SUCCESS();
+      }, 300);
+    } catch (e) {
+      if (peerEvalErrorEl) {
+        peerEvalErrorEl.textContent = e?.message || "Errore invio peer evaluation.";
+        peerEvalErrorEl.classList.remove("d-none");
+      }
+    } finally {
+      btnSubmitPeerEvalEl.disabled = false;
+      btnSubmitPeerEvalEl.innerHTML = old;
+    }
+  });
+
   // bind: confirm join
   btnConfirmJoin?.addEventListener("click", async () => {
     if (!JOIN_EXAM_ID) return;
@@ -194,4 +347,7 @@
   // exports
   modal.openJoinModal = openJoinModal;
   modal.openDoneModal = openDoneModal;
+
+  // ✅ export peer modal opener
+  modal.openPeerEvalModal = openPeerEvalModal;
 })();

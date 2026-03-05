@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Index
+from sqlalchemy import Boolean, DateTime, Integer, String, Index
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db.base import Base  # o dove importi Base
 
 
@@ -8,12 +10,12 @@ from app.db.base import Base  # o dove importi Base
 class RevokedToken(Base):
     __tablename__ = "revoked_tokens"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    jti = Column(String(64), unique=True, nullable=False)
-    user_id = Column(Integer, nullable=False)
-    revoked_at = Column(DateTime, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    is_active = Column(Boolean, nullable=False, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         Index("ix_revoked_tokens_user_id", "user_id"),

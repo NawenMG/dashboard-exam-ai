@@ -1,5 +1,7 @@
+# app/repositories/exam_repository.py
+
 from sqlalchemy import select, func, desc
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exam import Exam
 from app.models.user import User
@@ -11,21 +13,26 @@ PAGE_SIZE_MAX = 200
 class ExamRepository:
     # Per creare un esame (POST)
     @staticmethod
-    def create(db: Session, exam: Exam) -> Exam:
+    async def create(db: AsyncSession, exam: Exam) -> Exam:
+        # ✅ garantisci che il JSONB non finisca NULL (se la colonna è NOT NULL)
+        if getattr(exam, "materials_json", None) is None:
+            exam.materials_json = []
+
         db.add(exam)
-        db.flush()
+        await db.flush()
         return exam
 
     # Trova un esame per id (GET: id)
     @staticmethod
-    def get_by_id(db: Session, exam_id: int) -> Exam | None:
+    async def get_by_id(db: AsyncSession, exam_id: int) -> Exam | None:
         stmt = select(Exam).where(Exam.id == exam_id)
-        return db.execute(stmt).scalar_one_or_none()
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     # Lista degli esami per materia (GET: subject)
     @staticmethod
-    def list_by_subject(
-        db: Session,
+    async def list_by_subject(
+        db: AsyncSession,
         *,
         subject: str,
         page: int = 1,
@@ -51,7 +58,7 @@ class ExamRepository:
             .join(User, User.id == Exam.teacher_id)
             .where(*base_where)
         )
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Exam)
@@ -61,14 +68,14 @@ class ExamRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # Lista degli esami per uno specifico teacher (GET: Teacher)
     @staticmethod
-    def list_by_teacher(
-        db: Session,
+    async def list_by_teacher(
+        db: AsyncSession,
         *,
         teacher_id: int,
         page: int = 1,
@@ -83,7 +90,7 @@ class ExamRepository:
         offset = (page - 1) * page_size
 
         count_stmt = select(func.count(Exam.id)).where(Exam.teacher_id == teacher_id)
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Exam)
@@ -92,14 +99,14 @@ class ExamRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # Lista degli esami pubblicati (GET: bool)
     @staticmethod
-    def list_published(
-        db: Session,
+    async def list_published(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = PAGE_SIZE_DEFAULT,
@@ -112,28 +119,32 @@ class ExamRepository:
         page_size = min(max(page_size, 1), PAGE_SIZE_MAX)
         offset = (page - 1) * page_size
 
-        count_stmt = select(func.count(Exam.id)).where(Exam.is_published == True)
-        total = db.execute(count_stmt).scalar_one()
+        count_stmt = select(func.count(Exam.id)).where(Exam.is_published.is_(True))
+        total = (await db.execute(count_stmt)).scalar_one()
 
         data_stmt = (
             select(Exam)
-            .where(Exam.is_published == True)
+            .where(Exam.is_published.is_(True))
             .order_by(desc(Exam.created_at))
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(data_stmt).scalars().all()
+        items = (await db.execute(data_stmt)).scalars().all()
 
         return items, int(total)
 
     # Aggiorna gli attributi di un esame (PUT)
     @staticmethod
     def update_fields(exam: Exam, data: dict) -> Exam:
+        # ✅ NON permettere update dei materiali via update generico
+        # (si gestiscono solo dalle rotte /materials/*)
+        data.pop("materials_json", None)
+
         for field, value in data.items():
             setattr(exam, field, value)
         return exam
 
     # Per eliminare un specifico esame (DELETE)
     @staticmethod
-    def delete(db: Session, exam: Exam) -> None:
-        db.delete(exam)
+    async def delete(db: AsyncSession, exam: Exam) -> None:
+        await db.delete(exam)

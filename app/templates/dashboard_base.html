@@ -17,7 +17,6 @@
       window.location.href = "/auth/login";
       return;
     }
-
     async function api(path, options = {}) {
       const token = localStorage.getItem("access_token");
       const headers = new Headers(options.headers || {});

@@ -3,8 +3,9 @@ import json
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 
 from app.models.user import User, UserRole
 from app.models.exam import Exam
@@ -20,7 +21,10 @@ from app.schemas.submission import SubmissionCreate, PagedSubmissions, PageMeta
 
 def _extract_questions_count(exam: Exam) -> int | None:
     try:
-        data = json.loads(exam.questions_json)
+        if isinstance(exam.questions_json, (dict, list)):
+            data = exam.questions_json
+        else:
+            data = json.loads(exam.questions_json)
     except Exception:
         return None
 
@@ -33,8 +37,8 @@ def _extract_questions_count(exam: Exam) -> int | None:
 
 class SubmissionService:
     @staticmethod
-    def create_submission(
-        db: Session, *, student: User, payload: SubmissionCreate
+    async def create_submission(
+        db: AsyncSession, *, student: User, payload: SubmissionCreate
     ) -> Submission:
         if student.role != "student":
             raise HTTPException(
@@ -42,7 +46,9 @@ class SubmissionService:
                 detail="Only students can create submissions.",
             )
 
-        exam = db.query(Exam).filter(Exam.id == payload.exam_id).first()
+        result = await db.execute(select(Exam).where(Exam.id == payload.exam_id))
+        exam = result.scalars().first()
+
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found.")
 
@@ -84,25 +90,25 @@ class SubmissionService:
         ]
 
         try:
-            SubmissionRepository.create_with_answers(
+            await SubmissionRepository.create_with_answers(
                 db, submission=submission, answers=answers
             )
-            db.commit()
-            db.refresh(submission)
+            await db.commit()
+            await db.refresh(submission)
         except IntegrityError:
-            db.rollback()
+            await db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail="Submission already exists for this exam and student, or duplicate answer index.",
             )
 
-        sub = SubmissionRepository.get_by_id(db, submission.id)
+        sub = await SubmissionRepository.get_by_id(db, submission.id)
         return sub
 
     # ✅ NUOVO: teacher prende submissions per exam (owner-only), con answers
     @staticmethod
-    def list_by_exam_for_teacher_with_answers(
-        db: Session,
+    async def list_by_exam_for_teacher_with_answers(
+        db: AsyncSession,
         *,
         teacher: User,
         exam_id: int,
@@ -115,13 +121,15 @@ class SubmissionService:
             )
 
         # check esistenza exam + owner
-        exam = db.query(Exam).filter(Exam.id == exam_id).first()
+        result = await db.execute(select(Exam).where(Exam.id == exam_id))
+        exam = result.scalars().first()
+
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found.")
         if exam.teacher_id != teacher.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
 
-        items, total = SubmissionRepository.list_by_exam_id_for_teacher(
+        items, total = await SubmissionRepository.list_by_exam_id_for_teacher(
             db,
             exam_id=exam_id,
             teacher_id=teacher.id,
@@ -142,8 +150,8 @@ class SubmissionService:
 
     # ✅ 2) SOLO TEACHER DELLA SUBJECT
     @staticmethod
-    def list_by_subject_for_teacher(
-        db: Session,
+    async def list_by_subject_for_teacher(
+        db: AsyncSession,
         *,
         teacher: User,
         subject: str,
@@ -161,7 +169,7 @@ class SubmissionService:
                 detail="You can only view submissions for your subject.",
             )
 
-        items, total = SubmissionRepository.list_by_subject(
+        items, total = await SubmissionRepository.list_by_subject(
             db, subject=subject, page=page, page_size=page_size
         )
 
@@ -178,8 +186,8 @@ class SubmissionService:
 
     # ✅ 3) SCOPED: student vede solo sue, teacher vede solo sue exams
     @staticmethod
-    def list_by_student_scoped(
-        db: Session,
+    async def list_by_student_scoped(
+        db: AsyncSession,
         *,
         user: User,
         student_id: int,
@@ -192,12 +200,12 @@ class SubmissionService:
                     status_code=403, detail="You can only view your own submissions."
                 )
 
-            items, total = SubmissionRepository.list_by_student_id(
+            items, total = await SubmissionRepository.list_by_student_id(
                 db, student_id=student_id, page=page, page_size=page_size
             )
 
         elif user.role == UserRole.teacher:
-            items, total = SubmissionRepository.list_by_student_id_for_teacher(
+            items, total = await SubmissionRepository.list_by_student_id_for_teacher(
                 db,
                 student_id=student_id,
                 teacher_id=user.id,

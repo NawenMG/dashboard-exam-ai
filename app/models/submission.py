@@ -2,13 +2,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import ForeignKey, DateTime, Enum as SAEnum, UniqueConstraint
+from sqlalchemy import ForeignKey, DateTime, String, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
-# Consegna dello svolgimento di un esame da parte di uno studente
 class SubmissionStatus(str, Enum):
     in_progress = "in_progress"
     submitted = "submitted"
@@ -16,11 +15,20 @@ class SubmissionStatus(str, Enum):
     teacher_done = "teacher_done"
     finalized = "finalized"
 
+    @classmethod
+    def values(cls) -> tuple[str, ...]:
+        return tuple(s.value for s in cls)
+
 
 class Submission(Base):
     __tablename__ = "submissions"
+
     __table_args__ = (
         UniqueConstraint("exam_id", "student_id", name="uq_submissions_exam_student"),
+        CheckConstraint(
+            f"status IN {SubmissionStatus.values()}",
+            name="ck_submissions_status_valid",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -37,19 +45,31 @@ class Submission(Base):
         nullable=False,
     )
 
-    status: Mapped[SubmissionStatus] = mapped_column(
-        SAEnum(SubmissionStatus, native_enum=False),
-        default=SubmissionStatus.in_progress,
+    status: Mapped[str] = mapped_column(
+        String(30),
         nullable=False,
+        default=SubmissionStatus.in_progress.value,
     )
 
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+    # ✅ NEW: quando il teacher “chiude” la peer review
+    peer_reviews_closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
     )
 
     # relationships
@@ -71,3 +91,7 @@ class Submission(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    # helpers
+    def set_status(self, status: SubmissionStatus) -> None:
+        self.status = status.value

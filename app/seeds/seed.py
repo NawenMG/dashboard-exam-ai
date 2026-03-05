@@ -1,19 +1,20 @@
 # app/seeds/seed.py
 import os
-import json
 import random
-from datetime import datetime, UTC
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from faker import Faker
 from passlib.context import CryptContext
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal as AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.models.exam import Exam
 from app.models.submission import Submission, SubmissionStatus
 from app.models.answer import Answer
-from app.models.evaluation import Evaluation, EvaluatorType
+from app.models.evaluation import Evaluation, EvaluatorType, EvaluationStatus
 from app.models.final_grade import FinalGrade
 
 fake = Faker("it_IT")
@@ -23,7 +24,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 NUM_STUDENTS = 50
 NUM_TEACHERS = 10
 NUM_EXAMS = 20
-NUM_SUBMISSIONS = 20
+NUM_SUBMISSIONS = 120
+PEER_TASKS_PER_STUDENT = 5
+PEER_ASSIGNMENT_STUDENTS = 20
 
 SUBJECTS = [
     "Matematica",
@@ -41,6 +44,12 @@ SUBJECTS = [
 SEED_STRICT = os.getenv("SEED_STRICT", "false").lower() == "true"
 
 
+# ---------- TIME HELPERS ----------
+def utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# ---------- UTILS ----------
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -60,28 +69,15 @@ def random_questions():
     return [{"question": fake.sentence(), "max_score": 30} for _ in range(n)]
 
 
-# ---------- JSON helpers ----------
-def dumps_json(obj) -> str:
-    return json.dumps(obj, ensure_ascii=False)
+# ---------- SEED HELPERS ----------
+async def already_seeded(db) -> bool:
+    result = await db.execute(select(User).where(User.email == "teacher0@test.com"))
+    return result.scalars().first() is not None
 
 
-def loads_json(val):
-    # supporta sia JSON string che già-oggetto (nel caso cambi tipo colonna in futuro)
-    if val is None:
-        return None
-    if isinstance(val, (dict, list)):
-        return val
-    return json.loads(val)
-
-
-# ---------- SEED HELPERS (idempotenti) ----------
-def already_seeded(db) -> bool:
-    # Se esiste il primo teacher "standard", consideriamo seed già fatto
-    return db.query(User).filter(User.email == "teacher0@test.com").first() is not None
-
-
-def get_or_create_user(db, *, email: str, defaults: dict) -> User:
-    u = db.query(User).filter(User.email == email).first()
+async def get_or_create_user(db, *, email: str, defaults: dict) -> User:
+    result = await db.execute(select(User).where(User.email == email))
+    u = result.scalars().first()
     if u:
         return u
     u = User(email=email, **defaults)
@@ -89,19 +85,18 @@ def get_or_create_user(db, *, email: str, defaults: dict) -> User:
     return u
 
 
-def seed_users(db):
+async def seed_users(db):
     students, teachers = [], []
 
     print("Creating teachers...")
-
     for i in range(NUM_TEACHERS):
         email = f"teacher{i}@test.com"
-        teacher = get_or_create_user(
+        teacher = await get_or_create_user(
             db,
             email=email,
             defaults=dict(
                 password_hash=hash_password("password"),
-                role=UserRole.teacher,
+                role=UserRole.teacher.value,
                 first_name=fake.first_name(),
                 last_name=fake.last_name(),
                 subject=SUBJECTS[i % len(SUBJECTS)],
@@ -111,15 +106,14 @@ def seed_users(db):
         teachers.append(teacher)
 
     print("Creating students...")
-
     for i in range(NUM_STUDENTS):
         email = f"student{i}@test.com"
-        student = get_or_create_user(
+        student = await get_or_create_user(
             db,
             email=email,
             defaults=dict(
                 password_hash=hash_password("password"),
-                role=UserRole.student,
+                role=UserRole.student.value,
                 first_name=fake.first_name(),
                 last_name=fake.last_name(),
                 matricola=f"M{i:05d}",
@@ -128,83 +122,79 @@ def seed_users(db):
         )
         students.append(student)
 
-    db.commit()
+    await db.commit()
     return students, teachers
 
 
-def seed_exams(db, teachers):
+async def seed_exams(db, teachers):
     exams = []
     print("Creating exams...")
 
-    # Evita di ricreare sempre "Esame i": se esiste, lo riusa
     for i in range(NUM_EXAMS):
         title = f"Esame {i}"
-        existing = db.query(Exam).filter(Exam.title == title).first()
+        result = await db.execute(select(Exam).where(Exam.title == title))
+        existing = result.scalars().first()
         if existing:
             exams.append(existing)
             continue
 
         teacher = random.choice(teachers)
-
-        # IMPORTANT: serializzo per evitare "dict can not be used as parameter"
-        questions = random_questions()
-        rubric = random_rubric()
-
         exam = Exam(
             teacher_id=teacher.id,
             title=title,
             description=fake.text(),
-            questions_json=dumps_json(questions),
-            rubric_json=dumps_json(rubric),
+            questions_json=random_questions(),
+            rubric_json=random_rubric(),
+            openai_schema_json=None,
+            materials_json=None,
             is_published=True,
         )
         db.add(exam)
         exams.append(exam)
 
-    db.commit()
+    await db.commit()
     return exams
 
 
-def seed_submissions(db, students, exams):
+async def seed_submissions(db, students, exams):
     submissions = []
     print("Creating submissions...")
 
-    # Genera coppie uniche (exam_id, student_id) per rispettare uq_submissions_exam_student
     possible_pairs = [(e.id, s.id) for e in exams for s in students]
     random.shuffle(possible_pairs)
 
     target = min(NUM_SUBMISSIONS, len(possible_pairs))
     created = 0
 
-    # mappa id->exam per lookup veloce
-    exam_by_id = {e.id: e for e in exams}
-
     for exam_id, student_id in possible_pairs:
         if created >= target:
             break
 
-        # se esiste già quella coppia, skip
-        exists = (
-            db.query(Submission)
-            .filter(Submission.exam_id == exam_id, Submission.student_id == student_id)
-            .first()
+        # skip se già esiste
+        result = await db.execute(
+            select(Submission).where(
+                Submission.exam_id == exam_id,
+                Submission.student_id == student_id,
+            )
         )
-        if exists:
+        if result.scalars().first():
             continue
+
+        now = utcnow_naive()
 
         submission = Submission(
             exam_id=exam_id,
             student_id=student_id,
             status=SubmissionStatus.finalized,
-            submitted_at=datetime.now(UTC),
+            submitted_at=now,
         )
         db.add(submission)
-        db.flush()  # ottieni submission.id senza commit
+        await db.flush()
 
-        exam = exam_by_id[exam_id]
-        questions = loads_json(exam.questions_json) or []
+        # questions per answers
+        qres = await db.execute(select(Exam.questions_json).where(Exam.id == exam_id))
+        questions = qres.scalar_one_or_none() or []
 
-        # answers
         for idx, _q in enumerate(questions):
             db.add(
                 Answer(
@@ -214,76 +204,160 @@ def seed_submissions(db, students, exams):
                 )
             )
 
-        # evaluations
+        # student eval COMPLETED con evaluator_id=student_id
         student_eval = Evaluation(
             submission_id=submission.id,
-            evaluator_type=EvaluatorType.student,
+            evaluator_type=EvaluatorType.student.value,
+            evaluator_id=student_id,
+            status=EvaluationStatus.completed.value,
             score=random.randint(18, 30),
             honors=False,
             comment=fake.sentence(),
+            details_json=None,
+            assigned_at=None,
+            completed_at=now,
+            created_at=now,
+            updated_at=now,
         )
-        teacher_eval = Evaluation(
-            submission_id=submission.id,
-            evaluator_type=EvaluatorType.teacher,
-            score=random.randint(18, 30),
-            honors=False,
-            comment=fake.sentence(),
-        )
+
+        # AI eval COMPLETED con evaluator_id=None
         ai_eval = Evaluation(
             submission_id=submission.id,
-            evaluator_type=EvaluatorType.ai,
+            evaluator_type=EvaluatorType.ai.value,
+            evaluator_id=None,
+            status=EvaluationStatus.completed.value,
             score=random.randint(18, 30),
             honors=False,
             comment=fake.sentence(),
+            details_json=None,
+            assigned_at=None,
+            completed_at=now,
+            created_at=now,
+            updated_at=now,
         )
 
-        db.add_all([student_eval, teacher_eval, ai_eval])
+        db.add_all([student_eval, ai_eval])
 
-        final_score = (
-            teacher_eval.score * 0.6 + ai_eval.score * 0.3 + student_eval.score * 0.1
-        )
+        # Final grade iniziale SENZA peer (renormalizzato su ai+self: 0.3 + 0.1 = 0.4)
+        final_score = (ai_eval.score * 0.3 + student_eval.score * 0.1) / 0.4
+
         db.add(
             FinalGrade(
                 submission_id=submission.id,
+                peer_weight=Decimal("0.60"),
+                ai_weight=Decimal("0.30"),
+                self_weight=Decimal("0.10"),
                 final_score=round(final_score, 2),
                 final_honors=False,
+                computed_at=now,
             )
         )
 
         try:
-            db.commit()
+            await db.commit()
             submissions.append(submission)
             created += 1
         except IntegrityError:
-            db.rollback()
+            await db.rollback()
             continue
 
     return submissions
 
 
-def run_seed():
-    db = SessionLocal()
-    try:
-        print("Seeding database...")
+async def seed_peer_assignments(db, students, exams):
+    """
+    Pre-assegna PEER_TASKS_PER_STUDENT stub peer assigned a un subset di studenti.
+    Così testi /evaluations/peer/tasks subito.
+    """
+    print("Creating peer assignments (stubs in evaluations)...")
 
-        if already_seeded(db):
-            print("Seed already applied (found teacher0@test.com). Skipping.")
-            return
+    subres = await db.execute(select(Submission))
+    all_subs = subres.scalars().all()
+    if not all_subs:
+        return
 
-        students, teachers = seed_users(db)
-        exams = seed_exams(db, teachers)
-        seed_submissions(db, students, exams)
+    random.shuffle(all_subs)
 
-        print("Seed completed!")
-    except IntegrityError:
-        db.rollback()
-        msg = "Seed IntegrityError (likely already seeded)."
-        if SEED_STRICT:
-            raise
-        print(msg)
-    finally:
-        db.close()
+    chosen_students = students[: min(PEER_ASSIGNMENT_STUDENTS, len(students))]
+    now = utcnow_naive()
+
+    idx = 0
+
+    for st in chosen_students:
+        assigned = 0
+        attempts = 0
+
+        while assigned < PEER_TASKS_PER_STUDENT and attempts < len(all_subs) * 2:
+            attempts += 1
+            if idx >= len(all_subs):
+                idx = 0
+            s = all_subs[idx]
+            idx += 1
+
+            # no self
+            if s.student_id == st.id:
+                continue
+
+            # evita doppio assignment stesso studente + stessa submission
+            exists_q = await db.execute(
+                select(Evaluation.id).where(
+                    Evaluation.submission_id == s.id,
+                    Evaluation.evaluator_type == EvaluatorType.peer.value,
+                    Evaluation.evaluator_id == st.id,
+                )
+            )
+            if exists_q.scalar_one_or_none():
+                continue
+
+            stub = Evaluation(
+                submission_id=s.id,
+                evaluator_type=EvaluatorType.peer.value,
+                evaluator_id=st.id,
+                status=EvaluationStatus.assigned.value,
+                score=None,
+                honors=False,
+                comment=None,
+                details_json=None,
+                assigned_at=now,
+                completed_at=None,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(stub)
+            assigned += 1
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            continue
+
+
+async def run_seed():
+    async with AsyncSessionLocal() as db:
+        try:
+            print("Seeding database...")
+
+            if await already_seeded(db):
+                print("Seed already applied (found teacher0@test.com). Skipping.")
+                return
+
+            students, teachers = await seed_users(db)
+            exams = await seed_exams(db, teachers)
+            await seed_submissions(db, students, exams)
+
+            await seed_peer_assignments(db, students, exams)
+
+            print("Seed completed!")
+        except IntegrityError:
+            await db.rollback()
+            msg = "Seed IntegrityError (likely already seeded)."
+            if SEED_STRICT:
+                raise
+            print(msg)
 
 
 if __name__ == "__main__":
-    run_seed()
+    import asyncio
+
+    asyncio.run(run_seed())

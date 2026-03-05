@@ -4,19 +4,27 @@
     if (window.__DASH_BASE_INIT__) return;
     window.__DASH_BASE_INIT__ = true;
 
-    const token = localStorage.getItem("access_token");
-    if (!token) {
+    const initialToken = localStorage.getItem("access_token");
+    if (!initialToken) {
       window.location.href = "/auth/login";
       return;
     }
 
     const btnCreateExam = document.getElementById("btnCreateExam");
 
+    function getToken() {
+      return localStorage.getItem("access_token");
+    }
+
     async function api(path, options = {}) {
-      const token = localStorage.getItem("access_token");
+      const token = getToken();
       const headers = new Headers(options.headers || {});
       if (token) headers.set("Authorization", "Bearer " + token);
-      if (options.body && !headers.has("Content-Type")) {
+
+      const isFormData =
+        typeof FormData !== "undefined" && options.body instanceof FormData;
+
+      if (options.body && !isFormData && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
 
@@ -74,7 +82,7 @@
     const logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
       logoutBtn.onclick = async () => {
-        const token = localStorage.getItem("access_token");
+        const token = getToken();
         if (!token) {
           window.location.href = "/auth/login";
           return;
@@ -99,6 +107,8 @@
       window.DASH = {
         api,
         me,
+        token: getToken(),      // ✅ esposto
+        getToken,              // ✅ helper
         showCreateExamButton,
         onCreateExamClick,
       };

@@ -1,6 +1,6 @@
 import math
 from sqlalchemy import select, func
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User, UserRole
 
@@ -18,8 +18,8 @@ def _normalize_like(s: str) -> str:
 class UserRepository:
     # Lista degli studenti con filtri opzionali (GET: role)
     @staticmethod
-    def list_students(
-        db: Session,
+    async def list_students(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = PAGE_SIZE_DEFAULT,
@@ -48,7 +48,7 @@ class UserRepository:
 
         # count
         count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         # data
         stmt = (
@@ -56,14 +56,14 @@ class UserRepository:
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(stmt).scalars().all()
+        items = (await db.execute(stmt)).scalars().all()
 
         return items, total
 
     # Lista degli insegnanti (GET: role)
     @staticmethod
-    def list_teachers(
-        db: Session,
+    async def list_teachers(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = PAGE_SIZE_DEFAULT,
@@ -88,13 +88,13 @@ class UserRepository:
             stmt = stmt.where(User.subject.ilike(_normalize_like(subject)))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = db.execute(count_stmt).scalar_one()
+        total = (await db.execute(count_stmt)).scalar_one()
 
         stmt = (
             stmt.order_by(User.last_name.asc(), User.first_name.asc())
             .offset(offset)
             .limit(page_size)
         )
-        items = db.execute(stmt).scalars().all()
+        items = (await db.execute(stmt)).scalars().all()
 
         return items, total

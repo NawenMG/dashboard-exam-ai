@@ -4,6 +4,7 @@ from .submission import Submission
 from .answer import Answer
 from .evaluation import Evaluation
 from .final_grade import FinalGrade
+from .revoked_token import RevokedToken  # ✅ AGGIUNGI QUESTA RIGA
 
 __all__ = [
     "User",
@@ -12,7 +13,8 @@ __all__ = [
     "Answer",
     "Evaluation",
     "FinalGrade",
+    "RevokedToken",  # ✅ AGGIUNGI QUESTA RIGA
 ]
 
-# QUesto file rende la cartella models un package Python
-# Cosi possiamo fare tipo: import app.models
+# Questo file rende la cartella models un package Python
+# e registra tutti i modelli su Base.metadata per Alembic

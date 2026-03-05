@@ -102,6 +102,50 @@ block body %}
         </div>
       </div>
     </div>
+
+    <!-- PEER REVIEW (5 submission) -->
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingPeer">
+        <button
+          class="accordion-button collapsed"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#collapsePeer"
+          aria-expanded="false"
+          aria-controls="collapsePeer"
+        >
+          Peer review (valuta 5 submission)
+          <span class="ms-2 badge bg-secondary" id="peerCount">0</span>
+        </button>
+      </h2>
+
+      <div
+        id="collapsePeer"
+        class="accordion-collapse collapse"
+        aria-labelledby="headingPeer"
+        data-bs-parent="#studentAccordion"
+      >
+        <div class="accordion-body">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="small text-muted">
+              Submission anonime assegnate a te (sempre le stesse finché non le
+              completi)
+            </div>
+            <div class="small text-muted" id="peerStatus"></div>
+          </div>
+
+          <div id="peerList" class="d-grid gap-2"></div>
+          <div id="peerEmpty" class="text-muted small d-none">
+            Nessuna peer review assegnata.
+          </div>
+
+          <div class="small text-muted mt-2">
+            Dopo aver inviato una peer review, la submission sparirà dalla
+            lista.
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </main>
 
@@ -249,9 +293,91 @@ block body %}
   </div>
 </div>
 
+<!-- =========================
+     MODALE: PEER EVALUATION
+========================= -->
+<div class="modal fade" id="peerEvalModal" tabindex="-1" aria-hidden="true">
+  <div
+    class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"
+  >
+    <div class="modal-content">
+      <div class="modal-header" style="background-color: #848789">
+        <h5 class="modal-title text-white mb-0">
+          <i class="fa-solid fa-pen-to-square me-2"></i>Peer evaluation
+        </h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white"
+          data-bs-dismiss="modal"
+          aria-label="Chiudi"
+        ></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="small text-muted mb-2">Stai valutando la submission:</div>
+        <div class="fw-semibold" id="peerEvalSubmissionTitle">—</div>
+
+        <!-- ✅ PREVIEW: Domande + Risposte -->
+        <div class="mt-3">
+          <div class="mb-2 fw-semibold">Risposte</div>
+          <div id="peerModalAnswers" class="d-grid gap-2 mb-3"></div>
+          <div id="peerModalEmpty" class="text-muted small d-none mb-3">
+            Nessuna risposta trovata.
+          </div>
+        </div>
+
+        <!-- ✅ Form voto + motivazione -->
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Voto</label>
+            <input
+              type="number"
+              class="form-control"
+              id="peerEvalScore"
+              min="0"
+              max="30"
+              step="1"
+              placeholder="0-30"
+            />
+            <div class="form-text">Inserisci un valore 0–30.</div>
+          </div>
+
+          <div class="col-md-8">
+            <label class="form-label">Motivazione</label>
+            <textarea
+              class="form-control"
+              id="peerEvalComment"
+              rows="4"
+              placeholder="Scrivi una motivazione chiara e costruttiva..."
+            ></textarea>
+          </div>
+        </div>
+
+        <div
+          class="alert alert-danger d-none mt-3 mb-0"
+          id="peerEvalError"
+        ></div>
+        <div class="alert alert-success d-none mt-3 mb-0" id="peerEvalSuccess">
+          Peer evaluation inviata!
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">
+          Annulla
+        </button>
+        <button class="btn btn-dark" id="btnSubmitPeerEval" type="button">
+          Invia
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', path='js/student/base.js') }}"></script>
 <script src="{{ url_for('static', path='js/student/modal.js') }}"></script>
 <script src="{{ url_for('static', path='js/student/exams.js') }}"></script>
+<script src="{{ url_for('static', path='js/student/peer.js') }}"></script>
 <script src="{{ url_for('static', path='js/student/index.js') }}"></script>
 
 {% endblock %}

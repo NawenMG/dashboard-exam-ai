@@ -13,6 +13,7 @@ from app.api.v1.final_grades import router as final_grades_router
 from app.api.v1.ai_evaluations import router as ai_evaluations_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.pages import router as pages_router
+from app.api.v1.materials import router as materials_router
 
 
 app = FastAPI(
@@ -67,6 +68,8 @@ app.include_router(evaluations_router)
 app.include_router(final_grades_router)
 app.include_router(ai_evaluations_router)
 app.include_router(auth_router)
+app.include_router(materials_router)
+
 
 # Pages (dashboard)
 app.include_router(pages_router, prefix="/dashboard")

@@ -1,7 +1,7 @@
-import json
+# app/services/exam_service.py
 import math
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exam import Exam
 from app.models.user import User
@@ -13,25 +13,24 @@ from app.repositories.exam_repository import (
 from app.schemas.exam import ExamCreate, ExamUpdate, PagedExams, PageMeta, ExamOut
 
 
-def _to_json_str(data: dict) -> str:
-    return json.dumps(data, ensure_ascii=False)
-
-
-def _from_json_str(data: str | None) -> dict | None:
-    if data is None:
-        return None
-    return json.loads(data)
-
-
 def _exam_to_out(exam: Exam) -> ExamOut:
+    questions = exam.questions_json or {}
+    rubric = exam.rubric_json or {}
+    openai_schema = exam.openai_schema_json
+
+    materials = exam.materials_json
+    if not isinstance(materials, list):
+        materials = []
+
     return ExamOut(
         id=exam.id,
         teacher_id=exam.teacher_id,
         title=exam.title,
         description=exam.description,
-        questions_json=_from_json_str(exam.questions_json) or {},
-        rubric_json=_from_json_str(exam.rubric_json) or {},
-        openai_schema_json=_from_json_str(exam.openai_schema_json),
+        questions_json=questions if isinstance(questions, dict) else {"questions": []},
+        rubric_json=rubric if isinstance(rubric, dict) else {"criteria": []},
+        openai_schema_json=openai_schema,
+        materials_json=materials,
         is_published=bool(exam.is_published),
         created_at=exam.created_at,
         updated_at=exam.updated_at,
@@ -40,7 +39,33 @@ def _exam_to_out(exam: Exam) -> ExamOut:
 
 class ExamService:
     @staticmethod
-    def create_exam(db: Session, *, teacher: User, payload: ExamCreate) -> ExamOut:
+    async def create_draft(db: AsyncSession, *, teacher: User) -> ExamOut:
+        if teacher.role != "teacher":
+            raise HTTPException(
+                status_code=403, detail="Only teachers can create drafts."
+            )
+
+        # ✅ bozza minima ma valida (non null)
+        exam = Exam(
+            teacher_id=teacher.id,
+            title="Bozza (non pubblicata)",
+            description=None,
+            questions_json={"questions": []},
+            rubric_json={"criteria": []},
+            openai_schema_json=None,
+            materials_json=[],  # ✅ IMPORTANTISSIMO
+            is_published=False,
+        )
+
+        await ExamRepository.create(db, exam)
+        await db.commit()
+        await db.refresh(exam)
+        return _exam_to_out(exam)
+
+    @staticmethod
+    async def create_exam(
+        db: AsyncSession, *, teacher: User, payload: ExamCreate
+    ) -> ExamOut:
         if teacher.role != "teacher":
             raise HTTPException(
                 status_code=403, detail="Only teachers can create exams."
@@ -50,36 +75,29 @@ class ExamService:
             teacher_id=teacher.id,
             title=payload.title,
             description=payload.description,
-            questions_json=_to_json_str(payload.questions_json),
-            rubric_json=_to_json_str(payload.rubric_json),
-            openai_schema_json=(
-                _to_json_str(payload.openai_schema_json)
-                if payload.openai_schema_json
-                else None
-            ),
+            questions_json=payload.questions_json,
+            rubric_json=payload.rubric_json,
+            openai_schema_json=payload.openai_schema_json,
+            materials_json=[],  # ✅ invece di None: così FE/route materiali sempre ok
             is_published=payload.is_published,
         )
 
-        ExamRepository.create(db, exam)
-        db.commit()
-        db.refresh(exam)
+        await ExamRepository.create(db, exam)
+        await db.commit()
+        await db.refresh(exam)
         return _exam_to_out(exam)
 
     @staticmethod
-    def list_exams_by_subject(
-        db: Session,
+    async def list_exams_by_subject(
+        db: AsyncSession,
         *,
         subject: str,
         page: int = 1,
         page_size: int = PAGE_SIZE_DEFAULT,
         teacher_id: int | None = None,
     ) -> PagedExams:
-        items, total = ExamRepository.list_by_subject(
-            db,
-            subject=subject,
-            page=page,
-            page_size=page_size,
-            teacher_id=teacher_id,
+        items, total = await ExamRepository.list_by_subject(
+            db, subject=subject, page=page, page_size=page_size, teacher_id=teacher_id
         )
 
         page = max(page, 1)
@@ -93,10 +111,9 @@ class ExamService:
             ),
         )
 
-    # ✅ NEW: lista esami del teacher loggato, senza subject
     @staticmethod
-    def list_my_exams(
-        db: Session,
+    async def list_my_exams(
+        db: AsyncSession,
         *,
         teacher: User,
         page: int = 1,
@@ -107,11 +124,8 @@ class ExamService:
                 status_code=403, detail="Only teachers can list their exams."
             )
 
-        items, total = ExamRepository.list_by_teacher(
-            db,
-            teacher_id=teacher.id,
-            page=page,
-            page_size=page_size,
+        items, total = await ExamRepository.list_by_teacher(
+            db, teacher_id=teacher.id, page=page, page_size=page_size
         )
 
         page = max(page, 1)
@@ -125,18 +139,15 @@ class ExamService:
             ),
         )
 
-    # ✅ NEW: lista di TUTTI gli esami pubblicati (senza subject)
     @staticmethod
-    def list_published_exams(
-        db: Session,
+    async def list_published_exams(
+        db: AsyncSession,
         *,
         page: int = 1,
         page_size: int = PAGE_SIZE_DEFAULT,
     ) -> PagedExams:
-        items, total = ExamRepository.list_published(
-            db,
-            page=page,
-            page_size=page_size,
+        items, total = await ExamRepository.list_published(
+            db, page=page, page_size=page_size
         )
 
         page = max(page, 1)
@@ -151,8 +162,8 @@ class ExamService:
         )
 
     @staticmethod
-    def update_exam(
-        db: Session,
+    async def update_exam(
+        db: AsyncSession,
         *,
         teacher: User,
         exam_id: int,
@@ -163,10 +174,9 @@ class ExamService:
                 status_code=403, detail="Only teachers can update exams."
             )
 
-        exam = ExamRepository.get_by_id(db, exam_id)
+        exam = await ExamRepository.get_by_id(db, exam_id)
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found.")
-
         if exam.teacher_id != teacher.id:
             raise HTTPException(
                 status_code=403, detail="You can only update your own exams."
@@ -174,36 +184,29 @@ class ExamService:
 
         data = payload.model_dump(exclude_unset=True)
 
-        if "questions_json" in data and data["questions_json"] is not None:
-            data["questions_json"] = _to_json_str(data["questions_json"])
-        if "rubric_json" in data and data["rubric_json"] is not None:
-            data["rubric_json"] = _to_json_str(data["rubric_json"])
-        if "openai_schema_json" in data:
-            if data["openai_schema_json"] is None:
-                data["openai_schema_json"] = None
-            else:
-                data["openai_schema_json"] = _to_json_str(data["openai_schema_json"])
+        # ✅ NON aggiornare materials da qui
+        data.pop("materials_json", None)
 
         ExamRepository.update_fields(exam, data)
-        db.commit()
-        db.refresh(exam)
+
+        await db.commit()
+        await db.refresh(exam)
         return _exam_to_out(exam)
 
     @staticmethod
-    def delete_exam(db: Session, *, teacher: User, exam_id: int) -> None:
+    async def delete_exam(db: AsyncSession, *, teacher: User, exam_id: int) -> None:
         if teacher.role != "teacher":
             raise HTTPException(
                 status_code=403, detail="Only teachers can delete exams."
             )
 
-        exam = ExamRepository.get_by_id(db, exam_id)
+        exam = await ExamRepository.get_by_id(db, exam_id)
         if not exam:
             raise HTTPException(status_code=404, detail="Exam not found.")
-
         if exam.teacher_id != teacher.id:
             raise HTTPException(
                 status_code=403, detail="You can only delete your own exams."
             )
 
-        ExamRepository.delete(db, exam)
-        db.commit()
+        await ExamRepository.delete(db, exam)
+        await db.commit()
