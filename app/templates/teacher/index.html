@@ -127,7 +127,6 @@ block body %}
               </div>
             </div>
 
-            <!-- ✅ QUI: sostituiamo solo label, ma lasciamo ID evalTeacherBody -->
             <div class="col-md-4">
               <div class="card border-danger h-100">
                 <div class="card-header bg-danger text-white small fw-semibold">
@@ -180,7 +179,6 @@ block body %}
                     />
                   </div>
 
-                  <!-- ✅ QUI: cambia solo label, ID resta wTeacher -->
                   <div class="col-md-4">
                     <label class="form-label small text-muted mb-1"
                       >Peso Peer</label
@@ -258,6 +256,7 @@ block body %}
       </div>
     </div>
   </div>
+
   <!-- MODALE: CREAZIONE ESAME -->
   <div class="modal fade" id="createExamModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -391,7 +390,7 @@ block body %}
                 </div>
               </div>
 
-              <!-- ✅ MATERIAL UPLOAD (PDF) -->
+              <!-- MATERIAL UPLOAD -->
               <div class="col-12">
                 <label class="form-label fw-semibold mt-3"
                   >Materiale del corso (PDF)</label
@@ -399,7 +398,6 @@ block body %}
 
                 <div class="card p-3 bg-light border-0">
                   <div class="d-flex flex-wrap align-items-center gap-2">
-                    <!-- ✅ LABEL che apre il file picker nativamente -->
                     <label
                       id="btnUploadMaterialPdf"
                       for="globalMaterialPdfInput"
@@ -440,6 +438,33 @@ block body %}
                   >Pubblicato</label
                 >
               </div>
+
+              <!-- ✅ BACKDOOR PEER DEBUG -->
+              <div class="col-12">
+                <div class="card p-3 bg-light border-0">
+                  <div class="d-flex align-items-start gap-2">
+                    <input
+                      class="form-check-input mt-1"
+                      type="checkbox"
+                      id="cePeerDebugBroadcast"
+                    />
+                    <div>
+                      <label
+                        class="form-check-label fw-semibold"
+                        for="cePeerDebugBroadcast"
+                      >
+                        Peer debug broadcast
+                      </label>
+                      <div class="small text-muted">
+                        Se attivo, tutte le submission di questo esame
+                        compariranno nella peer review di
+                        <strong>student1</strong> e <strong>student3</strong>,
+                        bypassando il limite standard di 5 task.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div id="ceError" class="alert alert-danger mt-3 d-none"></div>
@@ -468,7 +493,7 @@ block body %}
     </div>
   </div>
 
-  <!-- MODALE: EDIT (placeholder UI) -->
+  <!-- MODALE: EDIT -->
   <div class="modal fade" id="editExamModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
@@ -552,7 +577,6 @@ block body %}
   style="height: 44px; background-color: #848789"
 ></footer>
 
-<!-- ✅ FILE INPUT GLOBALE: NON display:none -->
 <input
   id="globalMaterialPdfInput"
   type="file"

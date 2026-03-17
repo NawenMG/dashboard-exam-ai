@@ -103,7 +103,7 @@ block body %}
       </div>
     </div>
 
-    <!-- PEER REVIEW (5 submission) -->
+    <!-- PEER REVIEW -->
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingPeer">
         <button
@@ -114,7 +114,7 @@ block body %}
           aria-expanded="false"
           aria-controls="collapsePeer"
         >
-          Peer review (valuta 5 submission)
+          Peer review
           <span class="ms-2 badge bg-secondary" id="peerCount">0</span>
         </button>
       </h2>
@@ -128,20 +128,21 @@ block body %}
         <div class="accordion-body">
           <div class="d-flex align-items-center justify-content-between mb-2">
             <div class="small text-muted">
-              Submission anonime assegnate a te (sempre le stesse finché non le
-              completi)
+              Ti vengono assegnate fino a 5 submission anonime alla volta. Ogni
+              volta che completi una peer evaluation, ne viene caricata
+              automaticamente un'altra.
             </div>
             <div class="small text-muted" id="peerStatus"></div>
           </div>
 
           <div id="peerList" class="d-grid gap-2"></div>
           <div id="peerEmpty" class="text-muted small d-none">
-            Nessuna peer review assegnata.
+            Nessuna peer review assegnata al momento.
           </div>
 
           <div class="small text-muted mt-2">
-            Dopo aver inviato una peer review, la submission sparirà dalla
-            lista.
+            Non vedrai mai le tue submission, né submission che hai già
+            valutato.
           </div>
         </div>
       </div>
@@ -317,7 +318,6 @@ block body %}
         <div class="small text-muted mb-2">Stai valutando la submission:</div>
         <div class="fw-semibold" id="peerEvalSubmissionTitle">—</div>
 
-        <!-- ✅ PREVIEW: Domande + Risposte -->
         <div class="mt-3">
           <div class="mb-2 fw-semibold">Risposte</div>
           <div id="peerModalAnswers" class="d-grid gap-2 mb-3"></div>
@@ -326,7 +326,6 @@ block body %}
           </div>
         </div>
 
-        <!-- ✅ Form voto + motivazione -->
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Voto</label>

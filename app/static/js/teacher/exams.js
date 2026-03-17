@@ -259,7 +259,7 @@
   }
 
   // ==========================
-  // Materials API helpers (ENDPOINT REALI)
+  // Materials API helpers
   // ==========================
   async function listMaterials(examId) {
     if (!examId) return [];
@@ -295,11 +295,11 @@
   }
 
   // ==========================
-  // ✅ Create modal: draft-first + upload subito
+  // Create modal state
   // ==========================
   let createdExamIdForUpload = null;
   let createdExamIsDraft = false;
-  let draftSupported = null; // null=unknown, true/false dopo prima prova
+  let draftSupported = null;
 
   function setUploadStatus(msg, kind = "muted") {
     const el = document.getElementById("materialUploadStatus");
@@ -311,9 +311,8 @@
   }
 
   function setUploadButtonEnabled(enabled) {
-    const btn = document.getElementById("btnUploadMaterialPdf"); // LABEL
+    const btn = document.getElementById("btnUploadMaterialPdf");
     if (!btn) return;
-    // Solo estetica: non blocchiamo picker/click
     btn.setAttribute("aria-disabled", enabled ? "false" : "true");
     btn.classList.toggle("opacity-50", !enabled);
     btn.classList.toggle("disabled", !enabled);
@@ -324,7 +323,7 @@
     createdExamIsDraft = !!isDraft;
 
     const hint = document.getElementById("materialUploadHint");
-    setUploadButtonEnabled(true); // ✅ sempre cliccabile nel modale
+    setUploadButtonEnabled(true);
 
     if (hint) {
       if (!examId) {
@@ -349,7 +348,6 @@
       setCreatedExamId(draft.id, { isDraft: true });
       return draft.id;
     } catch (e) {
-      // 404/405 tipicamente
       draftSupported = false;
       throw e;
     }
@@ -426,7 +424,7 @@
   }
 
   // ==========================
-  // ✅ Existing exam accordion materials UI
+  // Existing exam accordion materials UI
   // ==========================
   function makeMaterialsBlockForExistingExam(exam, editable) {
     const wrap = document.createElement("div");
@@ -552,7 +550,7 @@
   }
 
   // ==========================
-  // Accordion hydration (dettagli + publish + submissions)
+  // Accordion hydration
   // ==========================
   async function hydrateExamAccordion(exam, bodyEl) {
     const editable = !exam.is_published;
@@ -570,6 +568,15 @@
               exam.is_published
                 ? `<span class="text-success fw-semibold">yes</span>`
                 : `<span class="text-warning fw-semibold">no</span>`
+            }
+          </span>
+
+          <span class="me-3">
+            <strong>Peer debug:</strong>
+            ${
+              exam.peer_debug_broadcast
+                ? `<span class="text-danger fw-semibold">on</span>`
+                : `<span class="text-muted fw-semibold">off</span>`
             }
           </span>
 
@@ -677,7 +684,6 @@
     const details = document.createElement("div");
     details.className = "d-grid gap-2";
 
-    // Title
     details.appendChild(
       renderFieldRow({
         label: "Titolo",
@@ -705,7 +711,6 @@
       }),
     );
 
-    // Description
     const descValue =
       exam.description && exam.description.trim()
         ? utils.escapeHtml(exam.description)
@@ -737,7 +742,6 @@
       }),
     );
 
-    // Questions
     const qs = utils.getQuestions(exam);
     const qSummary = qs.length
       ? `<span>${qs.length} domande</span>`
@@ -802,7 +806,6 @@
     };
     details.appendChild(qRow);
 
-    // Criteria
     const cs = utils.getCriteria(exam);
     const cSummary = cs.length
       ? `<span>${cs.length} criteri</span>`
@@ -866,7 +869,7 @@
     };
     details.appendChild(cRow);
 
-    // ✅ Materials (sempre visibile)
+    // Materials
     const matWrap = document.createElement("div");
     matWrap.className = "py-1";
     matWrap.innerHTML = `
@@ -883,7 +886,6 @@
     matWrap.appendChild(matSlot);
     details.appendChild(matWrap);
 
-    // ✅ AI config: (identico al tuo originale, reinserito completo)
     const ai = exam.openai_schema_json || null;
     let aiSummary = `<span class="text-muted">—</span>`;
     try {
@@ -1077,12 +1079,13 @@
   }
 
   // ==========================
-  // Create exam modal (DRAFT + FINAL via PUT /exams/{id})
+  // Create exam modal
   // ==========================
   function initCreateExamModal() {
     const ceTitle = document.getElementById("ceTitle");
     const ceDescription = document.getElementById("ceDescription");
     const cePublished = document.getElementById("cePublished");
+    const cePeerDebugBroadcast = document.getElementById("cePeerDebugBroadcast");
 
     const questionsContainer = document.getElementById("questionsContainer");
     const criteriaContainer = document.getElementById("criteriaContainer");
@@ -1205,6 +1208,7 @@
       ceTitle.value = "";
       ceDescription.value = "";
       cePublished.checked = false;
+      if (cePeerDebugBroadcast) cePeerDebugBroadcast.checked = false;
 
       aiMinScore.value = "0";
       aiMaxScore.value = "30";
@@ -1264,29 +1268,28 @@
         rubric_json: { criteria: c },
         openai_schema_json: buildAISchemaJson(),
         is_published: !!cePublished.checked,
+        peer_debug_broadcast: !!cePeerDebugBroadcast?.checked,
       };
 
       ceSubmitBtn.disabled = true;
       ceSubmitBtn.textContent = "Salvataggio...";
 
       try {
-        // ✅ se ho una bozza: FINALIZZO facendo PUT /exams/{id} (mantiene i materiali)
         if (createdExamIdForUpload && createdExamIsDraft) {
-          await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
+          const updated = await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
             method: "PUT",
             body: JSON.stringify(payload),
           });
           createdExamIsDraft = false;
+          Object.assign(payload, updated || {});
           setCreatedExamId(createdExamIdForUpload, { isDraft: false });
         } else if (!createdExamIdForUpload) {
-          // nessuna bozza (draft non supportato) -> creo esame normale
           const created = await window.DASH.api("/exams", {
             method: "POST",
             body: JSON.stringify(payload),
           });
           setCreatedExamId(created?.id, { isDraft: false });
         } else {
-          // già esame vero -> aggiornamento
           await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
             method: "PUT",
             body: JSON.stringify(payload),
@@ -1296,7 +1299,7 @@
         await loadTeacherMyExams();
         setUploadStatus("Esame salvato. I PDF (se caricati) restano associati.", "success");
         await refreshCreateMaterialsList();
-        // ✅ chiudi la modale Bootstrap
+
         const modalEl = document.getElementById("createExamModal");
         bootstrap.Modal.getInstance(modalEl)?.hide();
       } catch (e) {
@@ -1309,11 +1312,8 @@
       }
     }
 
-    // ✅ Quando apro il modale: provo a creare la bozza automaticamente
     createModalEl?.addEventListener("shown.bs.modal", async () => {
       try {
-        // NON resetto tutto qui se vuoi mantenere campi tra aperture; ma per sicurezza sì:
-        // resetCreateExamForm();
         setCreatedExamId(null);
         renderCreateMaterialsList([]);
         setUploadStatus("Preparazione bozza per upload...", "muted");
@@ -1324,7 +1324,6 @@
       } catch (e) {
         setCreatedExamId(null);
         renderCreateMaterialsList([]);
-        // fallback: draft non esiste
         setUploadButtonEnabled(false);
         setUploadStatus("Draft non disponibile: crea l’esame per caricare PDF.", "danger");
       }
@@ -1334,7 +1333,6 @@
       resetCreateExamForm();
     });
 
-    // ✅ Upload: se non ho examId, creo bozza al volo (se supportata)
     fileInput?.addEventListener("change", async () => {
       const files = Array.from(fileInput.files || []);
       if (!files.length) return;
@@ -1363,7 +1361,6 @@
     exams.resetCreateExamForm = resetCreateExamForm;
   }
 
-  // exports
   exams.loadTeacherMyExams = loadTeacherMyExams;
   exams.initCreateExamModal = initCreateExamModal;
 })();

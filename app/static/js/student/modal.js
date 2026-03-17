@@ -251,7 +251,13 @@
 
     const sub = task?.submission || {};
     const sid = sub?.id ?? "—";
-    if (peerEvalSubmissionTitleEl) peerEvalSubmissionTitleEl.textContent = `Submission anonima #${sid}`;
+    const examTitle =
+  typeof sub?.exam_title === "string" && sub.exam_title.trim()
+    ? ` • ${sub.exam_title.trim()}`
+    : "";
+if (peerEvalSubmissionTitleEl) {
+  peerEvalSubmissionTitleEl.textContent = `Submission anonima #${sid}${examTitle}`;
+}
 
     // ✅ render Q&A sopra
     renderPeerAnswers(task);
@@ -300,12 +306,16 @@
         }),
       });
 
-      peerEvalSuccessEl?.classList.remove("d-none");
+      if (peerEvalSuccessEl) {
+  peerEvalSuccessEl.textContent =
+    "Peer evaluation inviata! La lista verrà aggiornata automaticamente.";
+  peerEvalSuccessEl.classList.remove("d-none");
+}
 
-      setTimeout(async () => {
-        bootstrap.Modal.getOrCreateInstance(peerEvalModalEl).hide();
-        if (PEER_ON_SUCCESS) await PEER_ON_SUCCESS();
-      }, 300);
+setTimeout(async () => {
+  bootstrap.Modal.getOrCreateInstance(peerEvalModalEl).hide();
+  if (PEER_ON_SUCCESS) await PEER_ON_SUCCESS();
+}, 350);
     } catch (e) {
       if (peerEvalErrorEl) {
         peerEvalErrorEl.textContent = e?.message || "Errore invio peer evaluation.";

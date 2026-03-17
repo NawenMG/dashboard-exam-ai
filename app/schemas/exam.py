@@ -11,16 +11,18 @@ class ExamOut(BaseModel):
     questions_json: Any
     rubric_json: Any
     openai_schema_json: Optional[Any] = None
-
-    # ✅ NEW
     materials_json: Optional[Any] = None
 
     is_published: bool
+
+    # ✅ NEW
+    peer_debug_broadcast: bool = False
+
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        from_attributes = True  # pydantic v1 (se usi v2: model_config)
+        from_attributes = True
 
 
 class ExamCreate(BaseModel):
@@ -29,11 +31,11 @@ class ExamCreate(BaseModel):
     questions_json: Any
     rubric_json: Any
     openai_schema_json: Optional[Any] = None
-
-    # ✅ NEW: default None così seed/creazione non devono valorizzarlo
     materials_json: Optional[Any] = None
-
     is_published: bool = False
+
+    # ✅ NEW
+    peer_debug_broadcast: bool = False
 
 
 class ExamUpdate(BaseModel):
@@ -42,11 +44,11 @@ class ExamUpdate(BaseModel):
     questions_json: Optional[Any] = None
     rubric_json: Optional[Any] = None
     openai_schema_json: Optional[Any] = None
+    materials_json: Optional[Any] = None
+    is_published: Optional[bool] = None
 
     # ✅ NEW
-    materials_json: Optional[Any] = None
-
-    is_published: Optional[bool] = None
+    peer_debug_broadcast: Optional[bool] = None
 
 
 class PageMeta(BaseModel):

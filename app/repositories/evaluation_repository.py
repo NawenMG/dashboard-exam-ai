@@ -21,7 +21,7 @@ class EvaluationRepository:
         stmt = (
             select(Evaluation)
             .where(Evaluation.submission_id == submission_id)
-            .order_by(Evaluation.evaluator_type.asc())
+            .order_by(Evaluation.evaluator_type.asc(), Evaluation.id.asc())
         )
         result = await db.execute(stmt)
         return result.scalars().all()
@@ -64,6 +64,33 @@ class EvaluationRepository:
         return res.scalars().all()
 
     @staticmethod
+    async def list_peer_assigned_for_exam_ids(
+        db: AsyncSession,
+        *,
+        student_id: int,
+        exam_ids: list[int],
+    ) -> list[Evaluation]:
+        if not exam_ids:
+            return []
+
+        stmt = (
+            select(Evaluation)
+            .join(Submission, Submission.id == Evaluation.submission_id)
+            .where(Evaluation.evaluator_type == EvaluatorType.peer.value)
+            .where(Evaluation.evaluator_id == student_id)
+            .where(Evaluation.status == EvaluationStatus.assigned.value)
+            .where(Submission.exam_id.in_(exam_ids))
+            .where(Submission.peer_reviews_closed_at.is_(None))
+            .order_by(
+                Submission.exam_id.asc(),
+                Evaluation.assigned_at.asc(),
+                Evaluation.id.asc(),
+            )
+        )
+        res = await db.execute(stmt)
+        return res.scalars().all()
+
+    @staticmethod
     async def get_peer_assignment_for_update(
         db: AsyncSession,
         *,
@@ -85,8 +112,9 @@ class EvaluationRepository:
         db: AsyncSession,
         *,
         student_id: int,
-        limit: int,
+        limit: int | None,
         exam_id: int | None = None,
+        randomize: bool = True,
     ) -> list[Submission]:
         already_assigned = exists(
             select(1)
@@ -100,15 +128,19 @@ class EvaluationRepository:
             select(Submission)
             .where(Submission.student_id != student_id)
             .where(~already_assigned)
-            .where(
-                Submission.peer_reviews_closed_at.is_(None)
-            )  # ✅ non assegnare se chiusa
-            .order_by(func.random())
-            .limit(limit)
+            .where(Submission.peer_reviews_closed_at.is_(None))
         )
 
         if exam_id is not None:
             stmt = stmt.where(Submission.exam_id == exam_id)
+
+        if randomize:
+            stmt = stmt.order_by(func.random())
+        else:
+            stmt = stmt.order_by(Submission.id.asc())
+
+        if limit is not None:
+            stmt = stmt.limit(limit)
 
         res = await db.execute(stmt)
         return res.scalars().all()
@@ -122,6 +154,7 @@ class EvaluationRepository:
     ) -> list[Evaluation]:
         now = datetime.utcnow()
         rows: list[Evaluation] = []
+
         for s in submissions:
             e = Evaluation(
                 submission_id=s.id,
@@ -139,6 +172,7 @@ class EvaluationRepository:
             )
             db.add(e)
             rows.append(e)
+
         await db.flush()
         return rows
 

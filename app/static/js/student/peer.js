@@ -14,6 +14,7 @@
 
   // State
   let PEER_TASKS = [];
+  const PEER_QUEUE_SIZE = 5;
 
   function setLoading() {
     if (peerStatus) peerStatus.textContent = "Caricamento...";
@@ -32,7 +33,6 @@
   }
 
   function normalizeTasks(payload) {
-    // ci aspettiamo list[PeerTaskOut], ma tolleriamo forme diverse
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload.items)) return payload.items;
@@ -43,13 +43,11 @@
   function getSubmissionPreview(task) {
     const sub = task?.submission || {};
 
-    // 1) titolo esame se presente
     const examTitle = sub?.exam_title;
     if (typeof examTitle === "string" && examTitle.trim()) {
       return `Esame: ${examTitle.trim()}`;
     }
 
-    // 2) fallback: prima risposta (se il backend manda answers)
     const answers = Array.isArray(sub?.answers) ? sub.answers : [];
     const first = answers.find((a) => typeof a?.answer_text === "string" && a.answer_text.trim());
     if (first) {
@@ -67,13 +65,18 @@
     const sub = task?.submission || {};
     const sid = sub?.id ?? "—";
     const preview = getSubmissionPreview(task);
+    const submittedAt = sub?.submitted_at ? utils.safeDate(sub.submitted_at) : "—";
 
     el.innerHTML = `
       <div class="card-body py-2">
         <div class="d-flex align-items-center justify-content-between gap-2">
           <div class="me-2">
             <div class="fw-semibold">Submission anonima #${utils.escapeHtml(sid)}</div>
-            <div class="small text-muted">Valutazione peer assegnata</div>
+            <div class="small text-muted">
+              Assegnata per peer review
+              <span class="mx-2">•</span>
+              <strong>Invio:</strong> ${utils.escapeHtml(submittedAt)}
+            </div>
             ${
               preview
                 ? `<div class="small mt-2">${utils.escapeHtml(preview)}</div>`
@@ -89,7 +92,6 @@
     `;
 
     el.querySelector('[data-action="eval"]').onclick = () => {
-      // apre il modale e, dopo submit OK, refresh della lista
       NS.modal.openPeerEvalModal(task, {
         onSuccess: async () => {
           await peer.refreshUI(window.DASH.me);
@@ -100,7 +102,7 @@
     return el;
   }
 
-  async function fetchPeerTasks({ examId = null, limit = 5 } = {}) {
+  async function fetchPeerTasks({ examId = null, limit = PEER_QUEUE_SIZE } = {}) {
     const qs = new URLSearchParams();
     qs.set("limit", String(limit));
     if (examId != null) qs.set("exam_id", String(examId));
@@ -113,10 +115,13 @@
     setLoading();
 
     try {
-      PEER_TASKS = await fetchPeerTasks({ limit: 5 });
+      PEER_TASKS = await fetchPeerTasks({ limit: PEER_QUEUE_SIZE });
 
       if (peerCount) peerCount.textContent = String(PEER_TASKS.length);
-      if (peerStatus) peerStatus.textContent = `${PEER_TASKS.length} assegnate`;
+
+      if (peerStatus) {
+        peerStatus.textContent = `${PEER_TASKS.length}/${PEER_QUEUE_SIZE} assegnate`;
+      }
 
       if (!PEER_TASKS.length) {
         peerEmpty?.classList.remove("d-none");

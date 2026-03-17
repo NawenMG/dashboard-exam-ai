@@ -32,6 +32,7 @@ def _exam_to_out(exam: Exam) -> ExamOut:
         openai_schema_json=openai_schema,
         materials_json=materials,
         is_published=bool(exam.is_published),
+        peer_debug_broadcast=bool(getattr(exam, "peer_debug_broadcast", False)),
         created_at=exam.created_at,
         updated_at=exam.updated_at,
     )
@@ -45,7 +46,6 @@ class ExamService:
                 status_code=403, detail="Only teachers can create drafts."
             )
 
-        # ✅ bozza minima ma valida (non null)
         exam = Exam(
             teacher_id=teacher.id,
             title="Bozza (non pubblicata)",
@@ -53,8 +53,9 @@ class ExamService:
             questions_json={"questions": []},
             rubric_json={"criteria": []},
             openai_schema_json=None,
-            materials_json=[],  # ✅ IMPORTANTISSIMO
+            materials_json=[],
             is_published=False,
+            peer_debug_broadcast=False,
         )
 
         await ExamRepository.create(db, exam)
@@ -78,8 +79,9 @@ class ExamService:
             questions_json=payload.questions_json,
             rubric_json=payload.rubric_json,
             openai_schema_json=payload.openai_schema_json,
-            materials_json=[],  # ✅ invece di None: così FE/route materiali sempre ok
+            materials_json=[],
             is_published=payload.is_published,
+            peer_debug_broadcast=bool(payload.peer_debug_broadcast),
         )
 
         await ExamRepository.create(db, exam)
@@ -184,7 +186,7 @@ class ExamService:
 
         data = payload.model_dump(exclude_unset=True)
 
-        # ✅ NON aggiornare materials da qui
+        # NON aggiornare materials da qui
         data.pop("materials_json", None)
 
         ExamRepository.update_fields(exam, data)

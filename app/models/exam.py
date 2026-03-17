@@ -27,27 +27,21 @@ class Exam(Base):
     rubric_json: Mapped[Any] = mapped_column(JSONB, nullable=False)
     openai_schema_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
 
-    # ✅ MATERIALI ASSOCIATI ALL’ESAME (solo metadati, NON file binari)
-    #
-    # Esempio struttura:
-    # [
-    #   {
-    #     "id": 1700000000,
-    #     "version": 1,
-    #     "filename": "Allegato A.pdf",
-    #     "storage_path": "/app/storage/materials/101_xxx.pdf",
-    #     "uploaded_at": "2026-02-19T13:45:00Z",
-    #     "chunks_created": 123
-    #   }
-    # ]
-    #
-    # 👉 nullable=True così nel seed sarà NULL
     materials_json: Mapped[Any | None] = mapped_column(
         JSONB,
         nullable=True,
     )
 
     is_published: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # ✅ backdoor applicativa per peer review debug
+    # Se true, tutte le submission di questo esame vengono mostrate
+    # a student1 e student3 nella peer queue, bypassando il limite 5.
+    peer_debug_broadcast: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
@@ -66,7 +60,6 @@ class Exam(Base):
         nullable=False,
     )
 
-    # relationships
     teacher: Mapped["User"] = relationship(back_populates="created_exams")
 
     submissions: Mapped[list["Submission"]] = relationship(
