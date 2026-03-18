@@ -12,7 +12,7 @@
         </div>
 
         <div class="card-body">
-          <h2 class="h6 mb-4 text-center text-muted">Accedi al sistema</h2>
+          <h2 class="h6 mb-4 text-center text-muted">Sign in to the system</h2>
 
           <form id="loginForm" novalidate>
             <div class="mb-3">
@@ -45,7 +45,7 @@
                 type="submit"
                 id="loginBtn"
               >
-                Accedi
+                Sign in
               </button>
             </div>
           </form>
@@ -58,7 +58,7 @@
 </main>
 {% endblock %} {% block scripts %}
 <script>
-  // redirect automatico se già autenticato
+  // automatic redirect if already authenticated
   if (localStorage.getItem("access_token")) {
     window.location.href = "/";
   }
@@ -77,13 +77,13 @@
     const password = document.getElementById("password").value;
 
     if (!email || !password) {
-      errorBox.textContent = "Inserisci email e password.";
+      errorBox.textContent = "Enter email and password.";
       errorBox.classList.remove("d-none");
       return;
     }
 
     btn.disabled = true;
-    btn.textContent = "Accesso...";
+    btn.textContent = "Signing in...";
 
     try {
       const res = await fetch("/auth/login", {
@@ -102,7 +102,7 @@
           ? typeof data.detail === "string"
             ? data.detail
             : JSON.stringify(data.detail)
-          : "Login fallito";
+          : "Login failed";
         throw new Error(message);
       }
 
@@ -113,7 +113,7 @@
       errorBox.classList.remove("d-none");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Accedi";
+      btn.textContent = "Sign in";
     }
   });
 </script>

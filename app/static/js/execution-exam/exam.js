@@ -12,7 +12,7 @@
     try {
       const exam = await NS.api.loadExamById(EXAM_ID);
       if (!exam) {
-        throw new Error("Esame non trovato o non pubblicato. (Controlla /exams/published)");
+        throw new Error("Exam not found or not published. (Check /exams/published)");
       }
 
       NS.exam.current = exam;
@@ -28,9 +28,8 @@
       NS.ui.showLoading(false);
     } catch (e) {
       NS.ui.showLoading(false);
-      // forza visibilità se siamo in errore
       document.getElementById("viewExam")?.classList.remove("d-none");
-      NS.ui.showFatalError(e?.message || "Errore caricamento esame.");
+      NS.ui.showFatalError(e?.message || "Error loading exam.");
     }
   }
 

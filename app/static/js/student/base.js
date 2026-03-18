@@ -14,7 +14,11 @@
       const token = localStorage.getItem("access_token");
       const headers = new Headers(options.headers || {});
       if (token) headers.set("Authorization", "Bearer " + token);
-      if (options.body && !headers.has("Content-Type")) {
+
+      const isFormData =
+        typeof FormData !== "undefined" && options.body instanceof FormData;
+
+      if (options.body && !isFormData && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
 
@@ -40,7 +44,6 @@
       try {
         const me = await api("/auth/me");
 
-        // ✅ questa pagina è SOLO student
         if (me?.role !== "student") {
           window.location.replace("/dashboard/teacher");
           return null;
@@ -50,7 +53,7 @@
         if (center) center.textContent = `Student: ${me.first_name} ${me.last_name}`;
 
         return me;
-      } catch (e) {
+      } catch (_) {
         localStorage.removeItem("access_token");
         window.location.href = "/auth/login";
         return null;

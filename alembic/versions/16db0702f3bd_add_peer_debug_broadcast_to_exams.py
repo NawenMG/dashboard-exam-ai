@@ -12,19 +12,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column(
+    op.add_column(
         "exams",
-        "peer_debug_broadcast",
-        existing_type=sa.Boolean(),
-        nullable=False,
-        server_default=sa.text("false"),
+        sa.Column(
+            "peer_debug_broadcast",
+            sa.Boolean(),
+            nullable=True,
+            server_default=sa.text("false"),
+        ),
+    )
+
+    op.execute(
+        "UPDATE exams SET peer_debug_broadcast = false WHERE peer_debug_broadcast IS NULL"
     )
 
     op.alter_column(
         "exams",
         "peer_debug_broadcast",
         existing_type=sa.Boolean(),
-        server_default=None,
+        nullable=False,
+        server_default=sa.text("false"),
     )
 
 

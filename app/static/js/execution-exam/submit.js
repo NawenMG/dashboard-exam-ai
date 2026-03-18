@@ -17,8 +17,8 @@
       NS.ui.readSelfEvaluation();
       return true;
     } catch (e) {
-      const msg = e?.message || "Errore validazione.";
-      if (String(msg).toLowerCase().includes("autovalutazione")) {
+      const msg = e?.message || "Validation error.";
+      if (String(msg).toLowerCase().includes("self-evaluation")) {
         NS.ui.showSelfEvalError(msg);
       } else {
         NS.ui.showAnswersError(msg);
@@ -36,13 +36,11 @@
       const selfEval = NS.ui.readSelfEvaluation();
       const EXAM_ID = Number(NS.EXAM_ID);
 
-      // 1) create submission
       const submission = await window.DASH.api("/submissions", {
         method: "POST",
         body: JSON.stringify({ exam_id: EXAM_ID, answers }),
       });
 
-      // 2) create evaluation (student)
       await window.DASH.api("/evaluations", {
         method: "POST",
         body: JSON.stringify({
@@ -58,7 +56,7 @@
       bootstrap.Modal.getOrCreateInstance(confirmModalEl).hide();
       window.location.href = "/dashboard/student";
     } catch (e) {
-      NS.ui.setConfirmModalError(e?.message || "Errore invio.");
+      NS.ui.setConfirmModalError(e?.message || "Submission error.");
     } finally {
       NS.ui.setConfirmSubmitBusy(false);
     }

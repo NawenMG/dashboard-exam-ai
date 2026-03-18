@@ -27,7 +27,6 @@
       if (me.role === "teacher") {
         window.DASH.showCreateExamButton(true);
 
-        // Init modale creazione esame (una volta)
         NS.exams.initCreateExamModal();
 
         window.DASH.onCreateExamClick(() => {

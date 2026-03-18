@@ -11,10 +11,10 @@
     subBlock.innerHTML = `
       <div class="d-flex align-items-center justify-content-between mb-2">
         <div class="fw-semibold">Submissions</div>
-        <div class="small text-muted" data-sub-status>Caricamento...</div>
+        <div class="small text-muted" data-sub-status>Loading...</div>
       </div>
       <div class="list-group" data-sub-list></div>
-      <div class="text-muted small d-none" data-sub-empty>Nessuna submission trovata.</div>
+      <div class="text-muted small d-none" data-sub-empty>No submissions found.</div>
     `;
     bodyEl.appendChild(subBlock);
 
@@ -56,13 +56,13 @@
         subList.appendChild(a);
       });
     } catch (e) {
-      subStatus.textContent = `Errore`;
+      subStatus.textContent = `Error`;
       subList.innerHTML = "";
       const err = document.createElement("div");
       err.className = "alert alert-danger mb-0";
       err.textContent =
         e?.message ||
-        "Errore caricamento submissions. (Assicurati di avere /submissions/by-exam/{exam_id})";
+        "Error loading submissions. (Make sure /submissions/by-exam/{exam_id} exists)";
       subBlock.appendChild(err);
     }
   }

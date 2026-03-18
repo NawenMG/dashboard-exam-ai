@@ -107,8 +107,8 @@
       window.DASH = {
         api,
         me,
-        token: getToken(),      // ✅ esposto
-        getToken,              // ✅ helper
+        token: getToken(),
+        getToken,
         showCreateExamButton,
         onCreateExamClick,
       };

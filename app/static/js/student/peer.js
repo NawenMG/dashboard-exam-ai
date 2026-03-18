@@ -6,25 +6,23 @@
 
   const peer = (NS.peer = NS.peer || {});
 
-  // UI refs
   const peerList = document.getElementById("peerList");
   const peerEmpty = document.getElementById("peerEmpty");
   const peerStatus = document.getElementById("peerStatus");
   const peerCount = document.getElementById("peerCount");
 
-  // State
   let PEER_TASKS = [];
   const PEER_QUEUE_SIZE = 5;
 
   function setLoading() {
-    if (peerStatus) peerStatus.textContent = "Caricamento...";
+    if (peerStatus) peerStatus.textContent = "Loading...";
     if (peerList) peerList.innerHTML = "";
     peerEmpty?.classList.add("d-none");
     if (peerCount) peerCount.textContent = "0";
   }
 
   function setError(msg) {
-    if (peerStatus) peerStatus.textContent = "Errore";
+    if (peerStatus) peerStatus.textContent = "Error";
     if (peerList) {
       peerList.innerHTML = `<div class="alert alert-danger mb-0">${utils.escapeHtml(msg)}</div>`;
     }
@@ -45,7 +43,7 @@
 
     const examTitle = sub?.exam_title;
     if (typeof examTitle === "string" && examTitle.trim()) {
-      return `Esame: ${examTitle.trim()}`;
+      return `Exam: ${examTitle.trim()}`;
     }
 
     const answers = Array.isArray(sub?.answers) ? sub.answers : [];
@@ -71,20 +69,20 @@
       <div class="card-body py-2">
         <div class="d-flex align-items-center justify-content-between gap-2">
           <div class="me-2">
-            <div class="fw-semibold">Submission anonima #${utils.escapeHtml(sid)}</div>
+            <div class="fw-semibold">Anonymous submission #${utils.escapeHtml(sid)}</div>
             <div class="small text-muted">
-              Assegnata per peer review
+              Assigned for peer review
               <span class="mx-2">•</span>
-              <strong>Invio:</strong> ${utils.escapeHtml(submittedAt)}
+              <strong>Submitted:</strong> ${utils.escapeHtml(submittedAt)}
             </div>
             ${
               preview
                 ? `<div class="small mt-2">${utils.escapeHtml(preview)}</div>`
-                : `<div class="small mt-2 text-muted fst-italic">Apri per valutare.</div>`
+                : `<div class="small mt-2 text-muted fst-italic">Open to evaluate.</div>`
             }
           </div>
 
-          <button class="btn btn-sm btn-outline-secondary" data-action="eval" title="Valuta">
+          <button class="btn btn-sm btn-outline-secondary" data-action="eval" title="Evaluate">
             <i class="fa-solid fa-pen"></i>
           </button>
         </div>
@@ -120,7 +118,7 @@
       if (peerCount) peerCount.textContent = String(PEER_TASKS.length);
 
       if (peerStatus) {
-        peerStatus.textContent = `${PEER_TASKS.length}/${PEER_QUEUE_SIZE} assegnate`;
+        peerStatus.textContent = `${PEER_TASKS.length}/${PEER_QUEUE_SIZE} assigned`;
       }
 
       if (!PEER_TASKS.length) {
@@ -133,10 +131,9 @@
       if (peerList) peerList.innerHTML = "";
       PEER_TASKS.forEach((t) => peerList.appendChild(renderTaskCard(t)));
     } catch (e) {
-      setError(e?.message || "Errore caricamento peer tasks.");
+      setError(e?.message || "Error loading peer tasks.");
     }
   }
 
-  // exports
   peer.refreshUI = refreshUI;
 })();

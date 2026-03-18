@@ -4,12 +4,12 @@
     if (window.__EXEC_EXAM_INIT__) return;
     window.__EXEC_EXAM_INIT__ = true;
 
+    const NS = (window.EXEC_EXAM = window.EXEC_EXAM || {});
+
     function initWhenDashReady() {
       NS.exam.initExam();
       NS.submit.bind();
     }
-
-    const NS = (window.EXEC_EXAM = window.EXEC_EXAM || {});
 
     if (window.DASH && window.DASH.me) {
       initWhenDashReady();

@@ -11,10 +11,8 @@
       const me = window.DASH?.me;
       if (!me) return;
 
-      // Esami
       await NS.exams.refreshUI(me);
 
-      // Peer tasks (se modulo presente)
       if (NS.peer?.refreshUI) {
         await NS.peer.refreshUI(me);
       }
