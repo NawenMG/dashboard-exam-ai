@@ -149,12 +149,13 @@ RISPOSTE_JSON:
 REGOLE:
 - score: intero 0..30
 - honors: true solo se score=30
-- comment: breve, chiaro, utile
+- comment: opzionale; se presente deve essere una stringa breve, chiara e utile
 - details_json: null oppure breakdown per domanda (opzionale)
 
 Rispondi SOLO con JSON valido nel formato:
-{{"score":0,"honors":false,"comment":"","details_json":null}}
+{{"score":0,"honors":false,"comment":null,"details_json":null}}
 
+Il campo "comment" può essere null oppure una stringa.
 Nessun testo fuori dal JSON.
 """.strip()
 
@@ -169,10 +170,21 @@ def _validate_result(result: Dict[str, Any]) -> None:
 
     if not isinstance(score, int) or not (0 <= score <= 30):
         raise AIEvaluationError("Field 'score' must be int 0..30")
+
     if not isinstance(honors, bool):
         raise AIEvaluationError("Field 'honors' must be boolean")
-    if not isinstance(comment, str) or not comment.strip():
-        raise AIEvaluationError("Field 'comment' must be a non-empty string")
+
+    # comment opzionale:
+    # - può mancare
+    # - può essere null
+    # - se è stringa vuota => normalizziamo a None
+    if comment is not None and not isinstance(comment, str):
+        raise AIEvaluationError("Field 'comment' must be a string or null")
+
+    if isinstance(comment, str):
+        normalized_comment = comment.strip()
+        result["comment"] = normalized_comment if normalized_comment else None
+
     if honors and score != 30:
         raise AIEvaluationError("honors=true allowed only when score=30")
 

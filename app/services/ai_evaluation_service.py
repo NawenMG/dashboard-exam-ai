@@ -2,8 +2,8 @@ import json
 from datetime import datetime
 
 from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.answer import Answer
@@ -13,9 +13,9 @@ from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User, UserRole
 from app.repositories.evaluation_repository import EvaluationRepository
 from app.services.ai_service import (
+    build_items_for_prompt,
     normalize_questions,
     normalize_rubric,
-    build_items_for_prompt,
 )
 from app.services.vectors.rag_grading_service import RAGGradingService
 
@@ -67,7 +67,7 @@ class AIEvaluationService:
                 status_code=403, detail="You can run AI eval only for your exams."
             )
 
-        # 🔥 CHECK EXISTING → IDPOTENTE
+        # CHECK EXISTING → idempotente
         existing = await EvaluationRepository.get_by_submission_and_type(
             db,
             submission_id=submission.id,
@@ -82,7 +82,7 @@ class AIEvaluationService:
                     pass
             return existing, False
 
-        # --- crea nuova evaluation ---
+        # crea nuova evaluation
 
         answers_result = await db.execute(
             select(Answer)
@@ -154,7 +154,7 @@ class AIEvaluationService:
             evaluator_type=EvaluatorType.ai,
             score=int(result["score"]),
             honors=bool(result["honors"]),
-            comment=str(result["comment"]),
+            comment=result.get("comment"),
             details_json=_dumps_json(details_payload),
             created_at=now,
             updated_at=now,
