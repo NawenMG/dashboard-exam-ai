@@ -73,8 +73,8 @@ services:
     environment:
       TZ: Europe/Rome
     ports:
-      - "6333:6333" # REST API + Web UI
-      - "6334:6334" # gRPC
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - ./docker/qdrant/storage:/qdrant/storage
 
@@ -99,8 +99,13 @@ services:
       DATABASE_URL: "postgresql+asyncpg://yugabyte:yugabyte@yb1:5433/yugabyte"
       RUN_SEED: "true"
       SEED_STRICT: "false"
-      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
-      OLLAMA_MODEL: "llama3.1:8b"
+
+      # Leggi tutto dal .env
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
+      OLLAMA_GENERATE_PATH: ${OLLAMA_GENERATE_PATH}
+      OLLAMA_EMBEDDINGS_PATH: ${OLLAMA_EMBEDDINGS_PATH}
 
       # Qdrant connection
       QDRANT_URL: "http://qdrant:6333"
@@ -110,6 +115,8 @@ services:
       - "8000:8000"
     volumes:
       - ./:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   yb1_data:

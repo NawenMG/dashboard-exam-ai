@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
-# LAYER INFRASTRUTTURALE CHE SI OCCUPA DI PARLARRE CON OLLAMA
+# LAYER INFRASTRUTTURALE CHE SI OCCUPA DI PARLARE CON OLLAMA
 
 # Base URL configurabile (Docker-friendly)
 # Esempi:
@@ -16,7 +16,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip(
 OLLAMA_GENERATE_PATH = os.getenv("OLLAMA_GENERATE_PATH", "/api/generate")
 OLLAMA_URL = f"{OLLAMA_BASE_URL}{OLLAMA_GENERATE_PATH}"
 
-DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+# Modello letto da env
+DEFAULT_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
 
 class AIEvaluationError(Exception):
@@ -39,13 +40,11 @@ def _loads_maybe(v: Any) -> Any:
         if not s:
             return None
 
-        # 1° parse
         try:
             obj = json.loads(s)
         except Exception:
             return v
 
-        # Se il risultato è ANCORA una stringa che sembra JSON, parse di nuovo
         if isinstance(obj, str):
             s2 = obj.strip()
             if s2.startswith("{") or s2.startswith("["):
