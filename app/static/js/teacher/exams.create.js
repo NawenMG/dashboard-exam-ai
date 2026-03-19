@@ -32,6 +32,11 @@
 
     let isSubmittingExam = false;
 
+    // Stato LOCALE del create modal: come nel file monolitico funzionante
+    let createdExamIdForUpload = null;
+    let createdExamIsDraft = false;
+    let draftSupported = null;
+
     createExamForm.onsubmit = (e) => {
       e.preventDefault();
       submitCreateExam();
@@ -126,6 +131,136 @@
       };
     }
 
+    function setUploadStatus(msg, kind = "muted") {
+      const el = document.getElementById("materialUploadStatus");
+      if (!el) return;
+      const cls =
+        kind === "success" ? "text-success" : kind === "danger" ? "text-danger" : "text-muted";
+      el.className = `small mt-2 ${cls}`;
+      el.textContent = msg || "";
+    }
+
+    function setUploadButtonEnabled(enabled) {
+      const btn = document.getElementById("btnUploadMaterialPdf");
+      if (!btn) return;
+      btn.setAttribute("aria-disabled", enabled ? "false" : "true");
+      btn.classList.toggle("opacity-50", !enabled);
+      btn.classList.toggle("disabled", !enabled);
+    }
+
+    function setCreatedExamId(examId, { isDraft = false } = {}) {
+      createdExamIdForUpload = examId;
+      createdExamIsDraft = !!isDraft;
+
+      const hidden = document.getElementById("ceDraftExamId");
+      if (hidden) {
+        hidden.value = examId ? String(examId) : "";
+      }
+
+      const hint = document.getElementById("materialUploadHint");
+      setUploadButtonEnabled(true);
+
+      if (hint) {
+        if (!examId) {
+          hint.textContent = "Upload PDFs: a draft exam will be created automatically.";
+        } else if (isDraft) {
+          hint.textContent = `Draft ready (ID ${examId}). You can upload PDFs now.`;
+        } else {
+          hint.textContent = `Exam ready (ID ${examId}). You can upload PDFs.`;
+        }
+      }
+    }
+
+    async function ensureDraftExamId() {
+      if (createdExamIdForUpload) return createdExamIdForUpload;
+      if (draftSupported === false) throw new Error("Draft is not supported by the backend.");
+
+      setUploadStatus("Creating draft for upload...", "muted");
+
+      try {
+        const draft = await window.DASH.api("/exams/draft", { method: "POST" });
+        if (!draft?.id) throw new Error("Invalid draft.");
+
+        draftSupported = true;
+        setCreatedExamId(draft.id, { isDraft: true });
+        return draft.id;
+      } catch (e) {
+        draftSupported = false;
+        throw e;
+      }
+    }
+
+    function renderCreateMaterialsList(items) {
+      const listEl = document.getElementById("materialPdfList");
+      const emptyEl = document.getElementById("materialPdfEmpty");
+      if (!listEl || !emptyEl) return;
+
+      listEl.innerHTML = "";
+      if (!items.length) {
+        emptyEl.classList.remove("d-none");
+        return;
+      }
+      emptyEl.classList.add("d-none");
+
+      for (const it of items) {
+        const row = document.createElement("div");
+        row.className = "card p-2 border-0 shadow-sm";
+        row.innerHTML = `
+          <div class="d-flex align-items-center justify-content-between gap-2">
+            <div class="small">
+              <i class="fa-solid fa-file-pdf me-2 text-danger"></i>
+              ${utils.escapeHtml(it.filename || ("PDF #" + it.id))}
+              <div class="text-muted small">${utils.safeDate(it.uploaded_at)}</div>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-secondary" type="button" title="Open" data-act="open">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" type="button" title="Remove" data-act="del">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+
+        row.querySelector('[data-act="open"]').onclick = () => {
+          if (!createdExamIdForUpload) return;
+          examsMaterials.openMaterial(createdExamIdForUpload, it.id);
+        };
+
+        row.querySelector('[data-act="del"]').onclick = async () => {
+          if (!createdExamIdForUpload) return;
+
+          const delBtn = row.querySelector('[data-act="del"]');
+          const openBtn = row.querySelector('[data-act="open"]');
+          delBtn.disabled = true;
+          openBtn.disabled = true;
+
+          try {
+            await examsMaterials.deleteMaterial(createdExamIdForUpload, it.id);
+            const updated = await examsMaterials.listMaterials(createdExamIdForUpload);
+            renderCreateMaterialsList(updated);
+            setUploadStatus("File removed.", "success");
+          } catch (e) {
+            setUploadStatus(`Remove error: ${e?.message || "error"}`, "danger");
+            delBtn.disabled = false;
+            openBtn.disabled = false;
+          }
+        };
+
+        listEl.appendChild(row);
+      }
+    }
+
+    async function refreshCreateMaterialsList() {
+      if (!createdExamIdForUpload) {
+        renderCreateMaterialsList([]);
+        return;
+      }
+      const items = await examsMaterials.listMaterials(createdExamIdForUpload);
+      renderCreateMaterialsList(items);
+    }
+
     function resetCreateExamForm() {
       ceError.classList.add("d-none");
       ceError.textContent = "";
@@ -146,11 +281,16 @@
       addQuestionRow("", 10);
       addCriterionRow("Correctness", 1);
 
-      examsMaterials.setCreatedExamId(null);
-      examsMaterials.createdExamIsDraft = false;
+      createdExamIdForUpload = null;
+      createdExamIsDraft = false;
+
+      const hidden = document.getElementById("ceDraftExamId");
+      if (hidden) hidden.value = "";
+
       if (fileInput) fileInput.value = "";
-      examsMaterials.setUploadStatus("");
-      examsMaterials.renderCreateMaterialsList([]);
+      setUploadStatus("");
+      renderCreateMaterialsList([]);
+      setCreatedExamId(null);
     }
 
     async function submitCreateExam() {
@@ -199,33 +339,31 @@
       ceSubmitBtn.textContent = "Saving...";
 
       try {
-        if (examsMaterials.createdExamIdForUpload && examsMaterials.createdExamIsDraft) {
-          const updated = await window.DASH.api(`/exams/${examsMaterials.createdExamIdForUpload}`, {
+        if (createdExamIdForUpload && createdExamIsDraft) {
+          await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
             method: "PUT",
             body: JSON.stringify(payload),
           });
-          examsMaterials.createdExamIsDraft = false;
-          Object.assign(payload, updated || {});
-          examsMaterials.setCreatedExamId(examsMaterials.createdExamIdForUpload, { isDraft: false });
-        } else if (!examsMaterials.createdExamIdForUpload) {
+          createdExamIsDraft = false;
+          setCreatedExamId(createdExamIdForUpload, { isDraft: false });
+        } else if (!createdExamIdForUpload) {
           const created = await window.DASH.api("/exams", {
             method: "POST",
             body: JSON.stringify(payload),
           });
-          examsMaterials.setCreatedExamId(created?.id, { isDraft: false });
+          setCreatedExamId(created?.id, { isDraft: false });
         } else {
-          await window.DASH.api(`/exams/${examsMaterials.createdExamIdForUpload}`, {
+          await window.DASH.api(`/exams/${createdExamIdForUpload}`, {
             method: "PUT",
             body: JSON.stringify(payload),
           });
         }
 
         await exams.loadTeacherMyExams();
-        examsMaterials.setUploadStatus("Exam saved. Uploaded PDFs remain attached.", "success");
-        await examsMaterials.refreshCreateMaterialsList();
+        setUploadStatus("Exam saved. Uploaded PDFs remain attached.", "success");
+        await refreshCreateMaterialsList();
 
-        const modalEl = document.getElementById("createExamModal");
-        bootstrap.Modal.getInstance(modalEl)?.hide();
+        bootstrap.Modal.getInstance(createModalEl)?.hide();
       } catch (e) {
         ceError.textContent = e?.message || "Error during exam creation.";
         ceError.classList.remove("d-none");
@@ -238,18 +376,18 @@
 
     createModalEl?.addEventListener("shown.bs.modal", async () => {
       try {
-        examsMaterials.setCreatedExamId(null);
-        examsMaterials.renderCreateMaterialsList([]);
-        examsMaterials.setUploadStatus("Preparing draft for upload...", "muted");
+        setCreatedExamId(null);
+        renderCreateMaterialsList([]);
+        setUploadStatus("Preparing draft for upload...", "muted");
 
-        await examsMaterials.ensureDraftExamId();
-        await examsMaterials.refreshCreateMaterialsList();
-        examsMaterials.setUploadStatus("Draft ready. You can upload PDFs now.", "success");
+        await ensureDraftExamId();
+        await refreshCreateMaterialsList();
+        setUploadStatus("Draft ready. You can upload PDFs now.", "success");
       } catch (e) {
-        examsMaterials.setCreatedExamId(null);
-        examsMaterials.renderCreateMaterialsList([]);
-        examsMaterials.setUploadButtonEnabled(false);
-        examsMaterials.setUploadStatus("Draft unavailable: create the exam to upload PDFs.", "danger");
+        setCreatedExamId(null);
+        renderCreateMaterialsList([]);
+        setUploadButtonEnabled(false);
+        setUploadStatus("Draft unavailable: create the exam to upload PDFs.", "danger");
       }
     });
 
@@ -257,31 +395,38 @@
       resetCreateExamForm();
     });
 
-    fileInput?.addEventListener("change", async () => {
-      const files = Array.from(fileInput.files || []);
-      if (!files.length) return;
+    if (fileInput && !fileInput.dataset.createBound) {
+      fileInput.dataset.createBound = "true";
 
-      try {
-        if (!examsMaterials.createdExamIdForUpload) {
-          await examsMaterials.ensureDraftExamId();
+      fileInput.addEventListener("change", async () => {
+        const createModalOpen = !!createModalEl?.classList.contains("show");
+        if (!createModalOpen) return;
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) return;
+
+        try {
+          if (!createdExamIdForUpload) {
+            await ensureDraftExamId();
+          }
+
+          setUploadButtonEnabled(false);
+          setUploadStatus("Upload in progress...", "muted");
+
+          for (const f of files) {
+            await examsMaterials.uploadMaterialPdfToExam(createdExamIdForUpload, f);
+          }
+
+          setUploadStatus("Upload completed.", "success");
+          await refreshCreateMaterialsList();
+        } catch (e) {
+          setUploadStatus(`Upload error: ${e?.message || "error"}`, "danger");
+        } finally {
+          setUploadButtonEnabled(true);
+          fileInput.value = "";
         }
-
-        examsMaterials.setUploadButtonEnabled(false);
-        examsMaterials.setUploadStatus("Upload in progress...", "muted");
-
-        for (const f of files) {
-          await examsMaterials.uploadMaterialPdfToExam(examsMaterials.createdExamIdForUpload, f);
-        }
-
-        examsMaterials.setUploadStatus("Upload completed.", "success");
-        await examsMaterials.refreshCreateMaterialsList();
-      } catch (e) {
-        examsMaterials.setUploadStatus(`Upload error: ${e?.message || "error"}`, "danger");
-      } finally {
-        examsMaterials.setUploadButtonEnabled(true);
-        fileInput.value = "";
-      }
-    });
+      });
+    }
 
     ceSubmitBtn.onclick = () => submitCreateExam();
     exams.resetCreateExamForm = resetCreateExamForm;

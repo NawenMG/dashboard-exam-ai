@@ -1,1 +1,1 @@
-{"schema":{"material_id":{"type":"integer","lookup":null,"range":null,"is_principal":null},"version":{"type":"integer","lookup":null,"range":null,"is_principal":null},"exam_id":{"type":"integer","lookup":null,"range":null,"is_principal":null}}}
+{"schema":{"exam_id":{"type":"integer","lookup":null,"range":null,"is_principal":null},"material_id":{"type":"integer","lookup":null,"range":null,"is_principal":null},"version":{"type":"integer","lookup":null,"range":null,"is_principal":null}}}
