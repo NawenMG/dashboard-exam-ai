@@ -3,17 +3,12 @@
 Sistema completo per la gestione di esami universitari con:
 
 👨‍🏫 gestione docenti e studenti
-
 📝 creazione e sottomissione esami
-
 🤖 valutazione automatica tramite AI (Ollama / LLM locale)
-
+👥 peer evaluation tra studenti (anonima e ciclica)
 📊 calcolo voto finale
-
 🔐 autenticazione JWT Ed25519
-
 🐳 containerizzazione completa con Docker
-
 🗄 database MariaDB con Alembic migrations
 
 🧱 Architettura
@@ -21,50 +16,35 @@ Sistema completo per la gestione di esami universitari con:
 Stack utilizzato:
 
 FastAPI
-
 SQLAlchemy 2.0
-
 Alembic
-
 MariaDB
-
 Docker + Docker Compose
-
 Ollama (per AI evaluation)
-
 JWT Ed25519 authentication
-
 Repository pattern + Service layer
-
 Frontend con Jinja2 + JS
 
 📁 Struttura progetto
 app/
- ├── api/              # endpoints FastAPI
- ├── core/             # config e security
- ├── db/               # engine, session, base
- ├── models/           # modelli SQLAlchemy
- ├── repositories/     # accesso DB
- ├── services/         # business logic
- ├── schemas/          # DTO (Pydantic)
- ├── seeds/            # seed database
- ├── static/           # JS frontend
- └── templates/        # HTML templates
+ ├── api/
+ ├── core/
+ ├── db/
+ ├── models/
+ ├── repositories/
+ ├── services/
+ ├── schemas/
+ ├── seeds/
+ ├── static/
+ └── templates/
 
-alembic/               # migrations database
+alembic/
 docker-compose.yml
 dockerfile
-
 ⚙️ Prerequisiti
 
-Per eseguire il progetto su un altro PC serve:
-
-Obbligatori
-
 Docker
-
 Docker Compose
-
 Git
 
 Verifica:
@@ -73,217 +53,234 @@ docker --version
 docker compose version
 git --version
 
-
 Installare Ollama:
 
 https://ollama.com/download
 
-E scaricare un modello:
+Scaricare modello:
 
 ollama pull llama3.1:8b
-
-🚀 Avvio rapido (raccomandato)
-1. Clonare il repository
+🚀 Avvio rapido
 git clone https://github.com/TUO_USERNAME/dashboard-exam-ai.git
 cd dashboard-exam-ai
 
-
-1. Avviare tutto con Docker
 docker compose up --build
 
-
-Oppure in background:
+Oppure:
 
 docker compose up -d --build
-
 ✅ Cosa succede automaticamente
+DB creato
+Migrations eseguite
+Seed iniziale
+Backend avviato
 
-All'avvio:
-
-MariaDB viene creato
-
-Alembic esegue migrations
-
-seed iniziale viene eseguito
-
-FastAPI parte
-
-Log visibili con:
+Log:
 
 docker compose logs -f api
-
-🌐 Accesso applicazione
-
-Aprire browser:
+🌐 Accesso
 
 http://localhost:8000
 
-📘 Documentazione API (Swagger)
-
-FastAPI genera automaticamente due documentazioni:
-
-Swagger UI
-
-URL:
+Swagger:
 
 http://localhost:8000/docs
 
+🔐 Login
 
-Permette di:
+Password: password
 
-testare endpoints
+Teacher:
 
-autenticarsi
+teacher0@test.com
+teacher1@test.com
+...
 
-inviare richieste
+Student:
 
-Interfaccia interattiva.
+student0@test.com
+student1@test.com
+...
+👥 Peer Evaluation (COME TESTARLA)
 
-ReDoc
+Questa è la parte più importante del sistema.
 
-URL:
+🔁 Logica implementata
+Ogni studente valuta k = 5 submission di altri studenti
+Assegnazione ciclica
+Nessuno valuta sé stesso
+Nessun duplicato
+Anonimato garantito
+🧪 Test step-by-step
+1. Login come teacher
+teacher0@test.com
+2. Crea un esame
 
-http://localhost:8000/redoc
+Dashboard teacher → "Create exam"
 
+3. Pubblica esame
 
-Versione più leggibile e formale.
+👉 IMPORTANTE: solo esami pubblicati funzionano per peer
 
-🔐 Autenticazione
-Per il login la password è: password e per l'email:
-- Insegnanti: teacher0@test.com, teacher1@test.com, teacher2@test.com ...
-- Studenti: student0@test.com, student1@test.com, student2@test.com ...
+4. Login come studenti
 
-Il sistema usa JWT Ed25519.
+Esempio:
 
-Workflow:
+student0@test.com
+student1@test.com
+student2@test.com
+student3@test.com
+student4@test.com
+5. Ogni studente invia una submission
 
-Login endpoint:
+Vai su:
 
-POST /auth/login
+/dashboard/execution-exam/{exam_id}
 
+Completa esame + self evaluation
 
-Copiare token
+6. Torna come teacher
 
-Usarlo in Swagger:
+Clicca:
 
-Authorize → Bearer <token>
+👉 Generate peer assignments
+
+Questo chiama:
+
+POST /evaluations/peer/generate/{exam_id}
+7. Verifica assegnazioni
+
+Ogni studente ora ha:
+
+k = min(5, n-1)
+
+Esempio:
+
+5 studenti → 4 peer ciascuno
+8. Login come studente
+
+Vai su:
+
+👉 Dashboard → Peer Review
+
+Vedrai:
+
+Anonymous submission #...
+9. Completa peer evaluation
+
+Ogni studente deve fare:
+
+score (0–30)
+commento
+10. Chiusura peer (teacher)
+
+Quando tutte le peer sono completate:
+
+👉 Teacher → Submission → Close peer reviews
+
+Questo:
+
+blocca nuove peer
+elimina pending
+calcola stats
+11. AI evaluation
+POST /ai-evaluations/{submission_id}
+12. Final grade
+POST /final-grades
+📊 Distribuzione peer
+
+Con N studenti:
+
+assegnazioni totali = N * k
+
+Esempio:
+
+Studenti	k	Totale
+5	4	20
+10	5	50
+50	5	250
+⚠️ Errori comuni
+1. Nessuna peer generata
+
+✔ studenti < 2
+
+2. Generate cliccato più volte
+
+✔ idempotente (no duplicati)
+
+3. Studente non vede task
+
+✔ non ha submission
+✔ peer già chiuse
+
+4. Faker rompe test
+
+✔ ora NON genera peer automaticamente
 
 🤖 AI Evaluation
-
-Sistema supporta valutazione automatica usando Ollama.
 
 Endpoint:
 
 POST /ai-evaluations/{submission_id}
 
-
 Richiede:
 
-Ollama installato
-
+Ollama attivo
 modello scaricato
-
 🗄 Database
 
-Database: MariaDB
-
-Gestione migrations con Alembic.
-
-Migrazione manuale:
+MariaDB + Alembic
 
 docker compose exec api alembic upgrade head
+🌱 Seed
 
-🌱 Seed database
+Genera:
 
-Seed automatico all'avvio.
-
-Contiene:
-
-docenti
-
-studenti
-
+utenti
 esami
+submission
 
-sottomissioni
+⚠️ NON genera peer automaticamente (modificato)
 
-valutazioni
-
-🐳 Servizi Docker
-
-Container:
-
+🐳 Servizi
 fastapi_api
 fastapi_mariadb
 fastapi_adminer
 
-
-Adminer accessibile su:
+Adminer:
 
 http://localhost:8080
 
-🛑 Stop applicazione
-docker compose down
-
-🔄 Reset completo database
+🔄 Reset DB
 docker compose down -v
 docker compose up --build
+🧠 Architettura
 
-🧠 Architettura software
-
-Pattern utilizzati:
+Pattern:
 
 Repository Pattern
-Service Layer Pattern
-Dependency Injection (FastAPI)
-DTO pattern (Pydantic)
-Clean architecture concepts
+Service Layer
+Dependency Injection
+DTO (Pydantic)
 
 🔒 Sicurezza
 
 JWT Ed25519
-Password hashing bcrypt
-Token revocation support
-Role-based access control
+bcrypt
+RBAC
 
-🧪 Ambiente sviluppo senza Docker (opzionale)
-
-Creare venv:
-
+🧪 Dev senza Docker
 python -m venv .venv
-
-
-Attivare:
-
-Windows:
-
-.venv\Scripts\activate
-
-
-Linux/Mac:
-
 source .venv/bin/activate
-
-
-Installare:
-
 pip install -r requirements.txt
-
-
-Avviare:
-
 uvicorn app.main:app --reload
-
 👨‍💻 Autore
 
 Progetto dimostrativo per:
 
-gestione esami
-
-valutazione AI
-
+peer evaluation avanzata
+AI grading con RAG
 architettura backend moderna
-
 📄 Licenza
 
 Uso didattico / dimostrativo.
