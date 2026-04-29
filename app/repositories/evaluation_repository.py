@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, func, exists, update, delete
+from sqlalchemy import select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.evaluation import Evaluation, EvaluatorType, EvaluationStatus
@@ -51,42 +51,26 @@ class EvaluationRepository:
         *,
         student_id: int,
         limit: int,
+        exam_id: int | None = None,
     ) -> list[Evaluation]:
-        stmt = (
-            select(Evaluation)
-            .where(Evaluation.evaluator_type == EvaluatorType.peer.value)
-            .where(Evaluation.evaluator_id == student_id)
-            .where(Evaluation.status == EvaluationStatus.assigned.value)
-            .order_by(Evaluation.assigned_at.asc(), Evaluation.id.asc())
-            .limit(limit)
-        )
-        res = await db.execute(stmt)
-        return res.scalars().all()
-
-    @staticmethod
-    async def list_peer_assigned_for_exam_ids(
-        db: AsyncSession,
-        *,
-        student_id: int,
-        exam_ids: list[int],
-    ) -> list[Evaluation]:
-        if not exam_ids:
-            return []
-
         stmt = (
             select(Evaluation)
             .join(Submission, Submission.id == Evaluation.submission_id)
             .where(Evaluation.evaluator_type == EvaluatorType.peer.value)
             .where(Evaluation.evaluator_id == student_id)
             .where(Evaluation.status == EvaluationStatus.assigned.value)
-            .where(Submission.exam_id.in_(exam_ids))
             .where(Submission.peer_reviews_closed_at.is_(None))
-            .order_by(
-                Submission.exam_id.asc(),
-                Evaluation.assigned_at.asc(),
-                Evaluation.id.asc(),
-            )
         )
+
+        if exam_id is not None:
+            stmt = stmt.where(Submission.exam_id == exam_id)
+
+        stmt = stmt.order_by(
+            Submission.exam_id.asc(),
+            Evaluation.assigned_at.asc(),
+            Evaluation.id.asc(),
+        ).limit(limit)
+
         res = await db.execute(stmt)
         return res.scalars().all()
 
@@ -107,59 +91,61 @@ class EvaluationRepository:
         res = await db.execute(stmt)
         return res.scalar_one_or_none()
 
+    # -------------------------
+    # CYCLIC PEER ASSIGNMENT
+    # -------------------------
+
     @staticmethod
-    async def pick_random_peer_candidates(
+    async def list_submissions_for_cyclic_peer_assignment(
         db: AsyncSession,
         *,
-        student_id: int,
-        limit: int | None,
-        exam_id: int | None = None,
-        randomize: bool = True,
+        exam_id: int,
     ) -> list[Submission]:
-        already_assigned = exists(
-            select(1)
-            .select_from(Evaluation)
-            .where(Evaluation.submission_id == Submission.id)
-            .where(Evaluation.evaluator_type == EvaluatorType.peer.value)
-            .where(Evaluation.evaluator_id == student_id)
-        )
-
         stmt = (
             select(Submission)
-            .where(Submission.student_id != student_id)
-            .where(~already_assigned)
+            .where(Submission.exam_id == exam_id)
+            .where(Submission.submitted_at.isnot(None))
             .where(Submission.peer_reviews_closed_at.is_(None))
+            .order_by(Submission.student_id.asc(), Submission.id.asc())
         )
-
-        if exam_id is not None:
-            stmt = stmt.where(Submission.exam_id == exam_id)
-
-        if randomize:
-            stmt = stmt.order_by(func.random())
-        else:
-            stmt = stmt.order_by(Submission.id.asc())
-
-        if limit is not None:
-            stmt = stmt.limit(limit)
-
         res = await db.execute(stmt)
         return res.scalars().all()
 
     @staticmethod
-    async def create_peer_assignments(
+    async def list_existing_peer_assignments_for_exam(
         db: AsyncSession,
         *,
-        student_id: int,
-        submissions: list[Submission],
+        exam_id: int,
+    ) -> set[tuple[int, int]]:
+        stmt = (
+            select(Evaluation.submission_id, Evaluation.evaluator_id)
+            .join(Submission, Submission.id == Evaluation.submission_id)
+            .where(Submission.exam_id == exam_id)
+            .where(Evaluation.evaluator_type == EvaluatorType.peer.value)
+            .where(Evaluation.evaluator_id.isnot(None))
+        )
+        res = await db.execute(stmt)
+
+        return {
+            (int(submission_id), int(evaluator_id))
+            for submission_id, evaluator_id in res.all()
+            if evaluator_id is not None
+        }
+
+    @staticmethod
+    async def create_cyclic_peer_assignments(
+        db: AsyncSession,
+        *,
+        pairs: list[tuple[int, int]],
     ) -> list[Evaluation]:
         now = datetime.utcnow()
         rows: list[Evaluation] = []
 
-        for s in submissions:
+        for submission_id, evaluator_id in pairs:
             e = Evaluation(
-                submission_id=s.id,
+                submission_id=submission_id,
                 evaluator_type=EvaluatorType.peer.value,
-                evaluator_id=student_id,
+                evaluator_id=evaluator_id,
                 status=EvaluationStatus.assigned.value,
                 assigned_at=now,
                 completed_at=None,

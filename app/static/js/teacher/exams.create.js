@@ -10,10 +10,13 @@
     const ceTitle = document.getElementById("ceTitle");
     const ceDescription = document.getElementById("ceDescription");
     const cePublished = document.getElementById("cePublished");
-    const cePeerDebugBroadcast = document.getElementById("cePeerDebugBroadcast");
 
     const questionsContainer = document.getElementById("questionsContainer");
     const criteriaContainer = document.getElementById("criteriaContainer");
+
+    const rubricType = document.getElementById("rubricType");
+    const rubricTypeHint = document.getElementById("rubricTypeHint");
+    const criteriaHelpText = document.getElementById("criteriaHelpText");
 
     const aiMinScore = document.getElementById("aiMinScore");
     const aiMaxScore = document.getElementById("aiMaxScore");
@@ -32,7 +35,6 @@
 
     let isSubmittingExam = false;
 
-    // Stato LOCALE del create modal: come nel file monolitico funzionante
     let createdExamIdForUpload = null;
     let createdExamIsDraft = false;
     let draftSupported = null;
@@ -41,6 +43,39 @@
       e.preventDefault();
       submitCreateExam();
     };
+
+    function getRubricTypeValue() {
+      return rubricType?.value === "level_based" ? "level_based" : "simple";
+    }
+
+    function updateRubricTypeTexts() {
+      const type = getRubricTypeValue();
+
+      if (type === "level_based") {
+        if (rubricTypeHint) {
+          rubricTypeHint.textContent =
+            "Level-based rubric: each criterion has descriptors for levels 5 to 1.";
+        }
+        if (criteriaHelpText) {
+          criteriaHelpText.textContent =
+            "Enter each indicator, its weight, and descriptions for levels 5, 4, 3, 2 and 1.";
+        }
+        if (btnAddCriterion) {
+          btnAddCriterion.innerHTML = `<i class="fa-solid fa-plus me-1"></i>Add indicator`;
+        }
+      } else {
+        if (rubricTypeHint) {
+          rubricTypeHint.textContent = "Simple rubric: criterion name + weight.";
+        }
+        if (criteriaHelpText) {
+          criteriaHelpText.textContent =
+            "Enter the criterion name and its weight (e.g. 1, 0.5, 2...).";
+        }
+        if (btnAddCriterion) {
+          btnAddCriterion.innerHTML = `<i class="fa-solid fa-plus me-1"></i>Add criterion`;
+        }
+      }
+    }
 
     function addQuestionRow(text = "", score = 10) {
       const row = document.createElement("div");
@@ -88,8 +123,94 @@
       criteriaContainer.appendChild(row);
     }
 
+    function addLevelCriterionRow(
+      name = "",
+      weight = 1,
+      levels = {
+        "5": "",
+        "4": "",
+        "3": "",
+        "2": "",
+        "1": "",
+      },
+    ) {
+      const row = document.createElement("div");
+      row.className = "card p-3 level-criterion-row border-0 shadow-sm";
+
+      row.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div class="flex-grow-1">
+            <label class="form-label small text-muted mb-1">Indicator / criterion</label>
+            <input class="form-control lc-name" placeholder="e.g. Conoscenza dei contenuti storici" value="${utils.escapeHtml(
+              name,
+            )}">
+          </div>
+
+          <div style="width: 120px">
+            <label class="form-label small text-muted mb-1">Weight</label>
+            <input type="number" step="0.1" class="form-control lc-weight" value="${weight}">
+          </div>
+
+          <div class="pt-4">
+            <button type="button" class="btn btn-sm btn-outline-danger" title="Remove">
+              <i class="fa-solid fa-x"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="row g-2">
+          ${[5, 4, 3, 2, 1]
+            .map(
+              (n) => `
+                <div class="col-12">
+                  <label class="form-label small text-muted mb-1">
+                    Level ${n}${n === 5 ? " – Excellent" : n === 1 ? " – Initial" : ""}
+                  </label>
+                  <input
+                    class="form-control lc-level"
+                    data-level="${n}"
+                    placeholder="Descriptor for level ${n}"
+                    value="${utils.escapeHtml(levels?.[String(n)] || "")}"
+                  >
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `;
+
+      row.querySelector("button").onclick = () => row.remove();
+      criteriaContainer.appendChild(row);
+    }
+
+    function resetCriteriaForCurrentType() {
+      criteriaContainer.innerHTML = "";
+      updateRubricTypeTexts();
+
+      if (getRubricTypeValue() === "level_based") {
+        addLevelCriterionRow("Conoscenza dei contenuti storici", 1, {
+          "5": "Complete, approfondite e rigorose",
+          "4": "Complete e precise",
+          "3": "Corrette ma non approfondite",
+          "2": "Essenziali e parziali",
+          "1": "Frammentarie o scorrette",
+        });
+      } else {
+        addCriterionRow("Correctness", 1);
+      }
+    }
+
     btnAddQuestion.onclick = () => addQuestionRow();
-    btnAddCriterion.onclick = () => addCriterionRow();
+
+    btnAddCriterion.onclick = () => {
+      if (getRubricTypeValue() === "level_based") {
+        addLevelCriterionRow();
+      } else {
+        addCriterionRow();
+      }
+    };
+
+    rubricType?.addEventListener("change", resetCriteriaForCurrentType);
 
     function buildQuestionsJson() {
       const questions = [];
@@ -101,14 +222,54 @@
       return { questions };
     }
 
-    function buildRubricJson() {
+    function buildSimpleRubricJson() {
       const criteria = [];
       document.querySelectorAll("#createExamModal .criterion-row").forEach((row) => {
         const name = row.querySelector(".c-name").value.trim();
         const weight = parseFloat(row.querySelector(".c-weight").value);
         if (name) criteria.push({ name, weight: Number.isFinite(weight) ? weight : 0 });
       });
-      return { criteria };
+
+      return {
+        type: "simple",
+        criteria,
+      };
+    }
+
+    function buildLevelBasedRubricJson() {
+      const criteria = [];
+
+      document.querySelectorAll("#createExamModal .level-criterion-row").forEach((row) => {
+        const name = row.querySelector(".lc-name").value.trim();
+        const weight = parseFloat(row.querySelector(".lc-weight").value);
+
+        const levels = {};
+        row.querySelectorAll(".lc-level").forEach((input) => {
+          const level = String(input.getAttribute("data-level"));
+          levels[level] = input.value.trim();
+        });
+
+        if (name) {
+          criteria.push({
+            name,
+            weight: Number.isFinite(weight) ? weight : 0,
+            levels,
+          });
+        }
+      });
+
+      return {
+        type: "level_based",
+        scale: { min: 1, max: 5 },
+        criteria,
+      };
+    }
+
+    function buildRubricJson() {
+      if (getRubricTypeValue() === "level_based") {
+        return buildLevelBasedRubricJson();
+      }
+      return buildSimpleRubricJson();
     }
 
     function buildAISchemaJson() {
@@ -209,7 +370,7 @@
           <div class="d-flex align-items-center justify-content-between gap-2">
             <div class="small">
               <i class="fa-solid fa-file-pdf me-2 text-danger"></i>
-              ${utils.escapeHtml(it.filename || ("PDF #" + it.id))}
+              ${utils.escapeHtml(it.filename || "PDF #" + it.id)}
               <div class="text-muted small">${utils.safeDate(it.uploaded_at)}</div>
             </div>
             <div class="d-flex gap-2">
@@ -268,7 +429,6 @@
       ceTitle.value = "";
       ceDescription.value = "";
       cePublished.checked = false;
-      if (cePeerDebugBroadcast) cePeerDebugBroadcast.checked = false;
 
       aiMinScore.value = "0";
       aiMaxScore.value = "30";
@@ -278,8 +438,10 @@
       questionsContainer.innerHTML = "";
       criteriaContainer.innerHTML = "";
 
+      if (rubricType) rubricType.value = "simple";
+
       addQuestionRow("", 10);
-      addCriterionRow("Correctness", 1);
+      resetCriteriaForCurrentType();
 
       createdExamIdForUpload = null;
       createdExamIsDraft = false;
@@ -309,7 +471,8 @@
       }
 
       const q = buildQuestionsJson().questions;
-      const c = buildRubricJson().criteria;
+      const rubricJson = buildRubricJson();
+      const c = rubricJson.criteria || [];
 
       if (q.length === 0) {
         ceError.textContent = "Enter at least one question.";
@@ -325,14 +488,28 @@
         return;
       }
 
+      if (rubricJson.type === "level_based") {
+        const invalid = c.find((criterion) => {
+          const levels = criterion.levels || {};
+          return [5, 4, 3, 2, 1].some((n) => !String(levels[String(n)] || "").trim());
+        });
+
+        if (invalid) {
+          ceError.textContent =
+            "For level-based rubrics, every criterion must have descriptors for levels 5, 4, 3, 2 and 1.";
+          ceError.classList.remove("d-none");
+          isSubmittingExam = false;
+          return;
+        }
+      }
+
       const payload = {
         title,
         description: ceDescription.value.trim() || null,
         questions_json: { questions: q },
-        rubric_json: { criteria: c },
+        rubric_json: rubricJson,
         openai_schema_json: buildAISchemaJson(),
         is_published: !!cePublished.checked,
-        peer_debug_broadcast: !!cePeerDebugBroadcast?.checked,
       };
 
       ceSubmitBtn.disabled = true;

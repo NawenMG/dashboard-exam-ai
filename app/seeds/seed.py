@@ -2,7 +2,6 @@
 import os
 import random
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from faker import Faker
 from passlib.context import CryptContext
@@ -12,10 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from app.db.session import SessionLocal as AsyncSessionLocal
 from app.models.user import User, UserRole
 from app.models.exam import Exam
-from app.models.submission import Submission, SubmissionStatus
-from app.models.answer import Answer
-from app.models.evaluation import Evaluation, EvaluatorType, EvaluationStatus
-from app.models.final_grade import FinalGrade
 
 fake = Faker("it_IT")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -24,9 +19,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 NUM_STUDENTS = 50
 NUM_TEACHERS = 10
 NUM_EXAMS = 20
-NUM_SUBMISSIONS = 120
-PEER_TASKS_PER_STUDENT = 5
-PEER_ASSIGNMENT_STUDENTS = 20
 
 SUBJECTS = [
     "Matematica",
@@ -56,17 +48,40 @@ def hash_password(password: str) -> str:
 
 def random_rubric():
     return {
+        "type": "simple",
         "criteria": [
             {"name": "correttezza", "weight": 0.5},
             {"name": "completezza", "weight": 0.3},
             {"name": "chiarezza", "weight": 0.2},
-        ]
+        ],
     }
 
 
 def random_questions():
     n = random.randint(2, 5)
-    return [{"question": fake.sentence(), "max_score": 30} for _ in range(n)]
+    return {
+        "questions": [
+            {
+                "text": fake.sentence(),
+                "max_score": 30,
+            }
+            for _ in range(n)
+        ]
+    }
+
+
+def default_ai_schema():
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "score": {"type": "number", "minimum": 0, "maximum": 30},
+            "honors": {"type": "boolean", "default": False},
+            "comment": {"type": "string"},
+            "teacher_notes": {"type": "string", "default": ""},
+        },
+        "required": ["score", "honors", "comment"],
+    }
 
 
 # ---------- SEED HELPERS ----------
@@ -80,8 +95,10 @@ async def get_or_create_user(db, *, email: str, defaults: dict) -> User:
     u = result.scalars().first()
     if u:
         return u
+
     u = User(email=email, **defaults)
     db.add(u)
+    await db.flush()
     return u
 
 
@@ -132,6 +149,7 @@ async def seed_exams(db, teachers):
 
     for i in range(NUM_EXAMS):
         title = f"Esame {i}"
+
         result = await db.execute(select(Exam).where(Exam.title == title))
         existing = result.scalars().first()
         if existing:
@@ -139,198 +157,24 @@ async def seed_exams(db, teachers):
             continue
 
         teacher = random.choice(teachers)
+
         exam = Exam(
             teacher_id=teacher.id,
             title=title,
             description=fake.text(),
             questions_json=random_questions(),
             rubric_json=random_rubric(),
-            openai_schema_json=None,
+            openai_schema_json=default_ai_schema(),
             materials_json=None,
             is_published=True,
+            peer_debug_broadcast=False,
         )
+
         db.add(exam)
         exams.append(exam)
 
     await db.commit()
     return exams
-
-
-async def seed_submissions(db, students, exams):
-    submissions = []
-    print("Creating submissions...")
-
-    possible_pairs = [(e.id, s.id) for e in exams for s in students]
-    random.shuffle(possible_pairs)
-
-    target = min(NUM_SUBMISSIONS, len(possible_pairs))
-    created = 0
-
-    for exam_id, student_id in possible_pairs:
-        if created >= target:
-            break
-
-        # skip se già esiste
-        result = await db.execute(
-            select(Submission).where(
-                Submission.exam_id == exam_id,
-                Submission.student_id == student_id,
-            )
-        )
-        if result.scalars().first():
-            continue
-
-        now = utcnow_naive()
-
-        submission = Submission(
-            exam_id=exam_id,
-            student_id=student_id,
-            status=SubmissionStatus.finalized,
-            submitted_at=now,
-        )
-        db.add(submission)
-        await db.flush()
-
-        # questions per answers
-        qres = await db.execute(select(Exam.questions_json).where(Exam.id == exam_id))
-        questions = qres.scalar_one_or_none() or []
-
-        for idx, _q in enumerate(questions):
-            db.add(
-                Answer(
-                    submission_id=submission.id,
-                    question_index=idx,
-                    answer_text=fake.paragraph(),
-                )
-            )
-
-        # student eval COMPLETED con evaluator_id=student_id
-        student_eval = Evaluation(
-            submission_id=submission.id,
-            evaluator_type=EvaluatorType.student.value,
-            evaluator_id=student_id,
-            status=EvaluationStatus.completed.value,
-            score=random.randint(18, 30),
-            honors=False,
-            comment=fake.sentence(),
-            details_json=None,
-            assigned_at=None,
-            completed_at=now,
-            created_at=now,
-            updated_at=now,
-        )
-
-        # AI eval COMPLETED con evaluator_id=None
-        ai_eval = Evaluation(
-            submission_id=submission.id,
-            evaluator_type=EvaluatorType.ai.value,
-            evaluator_id=None,
-            status=EvaluationStatus.completed.value,
-            score=random.randint(18, 30),
-            honors=False,
-            comment=fake.sentence(),
-            details_json=None,
-            assigned_at=None,
-            completed_at=now,
-            created_at=now,
-            updated_at=now,
-        )
-
-        db.add_all([student_eval, ai_eval])
-
-        # Final grade iniziale SENZA peer (renormalizzato su ai+self: 0.3 + 0.1 = 0.4)
-        final_score = (ai_eval.score * 0.3 + student_eval.score * 0.1) / 0.4
-
-        db.add(
-            FinalGrade(
-                submission_id=submission.id,
-                peer_weight=Decimal("0.60"),
-                ai_weight=Decimal("0.30"),
-                self_weight=Decimal("0.10"),
-                final_score=round(final_score, 2),
-                final_honors=False,
-                computed_at=now,
-            )
-        )
-
-        try:
-            await db.commit()
-            submissions.append(submission)
-            created += 1
-        except IntegrityError:
-            await db.rollback()
-            continue
-
-    return submissions
-
-
-async def seed_peer_assignments(db, students, exams):
-    """
-    Pre-assegna PEER_TASKS_PER_STUDENT stub peer assigned a un subset di studenti.
-    Così testi /evaluations/peer/tasks subito.
-    """
-    print("Creating peer assignments (stubs in evaluations)...")
-
-    subres = await db.execute(select(Submission))
-    all_subs = subres.scalars().all()
-    if not all_subs:
-        return
-
-    random.shuffle(all_subs)
-
-    chosen_students = students[: min(PEER_ASSIGNMENT_STUDENTS, len(students))]
-    now = utcnow_naive()
-
-    idx = 0
-
-    for st in chosen_students:
-        assigned = 0
-        attempts = 0
-
-        while assigned < PEER_TASKS_PER_STUDENT and attempts < len(all_subs) * 2:
-            attempts += 1
-            if idx >= len(all_subs):
-                idx = 0
-            s = all_subs[idx]
-            idx += 1
-
-            # no self
-            if s.student_id == st.id:
-                continue
-
-            # evita doppio assignment stesso studente + stessa submission
-            exists_q = await db.execute(
-                select(Evaluation.id).where(
-                    Evaluation.submission_id == s.id,
-                    Evaluation.evaluator_type == EvaluatorType.peer.value,
-                    Evaluation.evaluator_id == st.id,
-                )
-            )
-            if exists_q.scalar_one_or_none():
-                continue
-
-            stub = Evaluation(
-                submission_id=s.id,
-                evaluator_type=EvaluatorType.peer.value,
-                evaluator_id=st.id,
-                status=EvaluationStatus.assigned.value,
-                score=None,
-                honors=False,
-                comment=None,
-                details_json=None,
-                assigned_at=now,
-                completed_at=None,
-                created_at=now,
-                updated_at=now,
-            )
-            db.add(stub)
-            assigned += 1
-
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            continue
 
 
 async def run_seed():
@@ -343,12 +187,14 @@ async def run_seed():
                 return
 
             students, teachers = await seed_users(db)
-            exams = await seed_exams(db, teachers)
-            await seed_submissions(db, students, exams)
-
-            await seed_peer_assignments(db, students, exams)
+            await seed_exams(db, teachers)
 
             print("Seed completed!")
+            print("Created users and exams only.")
+            print(
+                "No submissions, answers, evaluations or final grades were generated."
+            )
+
         except IntegrityError:
             await db.rollback()
             msg = "Seed IntegrityError (likely already seeded)."

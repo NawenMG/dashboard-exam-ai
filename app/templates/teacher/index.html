@@ -7,7 +7,7 @@ body %}
     <div class="d-flex align-items-center justify-content-between">
       <div class="text-white fw-semibold">Exam Dashboard</div>
 
-      <div class="text-white-50 small text-center" id="userCenterLabel">
+      <div class="text-white small text-center" id="userCenterLabel">
         Loading user...
       </div>
 
@@ -165,9 +165,9 @@ body %}
 
                 <div class="row g-2">
                   <div class="col-md-4">
-                    <label class="form-label small text-muted mb-1"
-                      >Self-evaluation weight</label
-                    >
+                    <label class="form-label small text-muted mb-1">
+                      Self-evaluation weight
+                    </label>
                     <input
                       id="wStudent"
                       type="number"
@@ -180,9 +180,9 @@ body %}
                   </div>
 
                   <div class="col-md-4">
-                    <label class="form-label small text-muted mb-1"
-                      >Peer weight</label
-                    >
+                    <label class="form-label small text-muted mb-1">
+                      Peer weight
+                    </label>
                     <input
                       id="wTeacher"
                       type="number"
@@ -195,9 +195,9 @@ body %}
                   </div>
 
                   <div class="col-md-4">
-                    <label class="form-label small text-muted mb-1"
-                      >AI weight</label
-                    >
+                    <label class="form-label small text-muted mb-1">
+                      AI weight
+                    </label>
                     <input
                       id="wAi"
                       type="number"
@@ -315,10 +315,34 @@ body %}
               </div>
 
               <div class="col-12">
-                <label class="form-label fw-semibold mt-3"
-                  >Evaluation criteria</label
-                >
+                <label class="form-label fw-semibold mt-3">
+                  Evaluation criteria
+                </label>
+
+                <div class="card p-3 bg-light border-0 mb-2">
+                  <div class="row g-2 align-items-end">
+                    <div class="col-md-6">
+                      <label class="form-label mb-1 small text-muted">
+                        Rubric type
+                      </label>
+                      <select id="rubricType" class="form-select">
+                        <option value="simple">Simple criteria</option>
+                        <option value="level_based">
+                          Level-based rubric (1–5)
+                        </option>
+                      </select>
+                    </div>
+
+                    <div class="col-md-6">
+                      <div class="form-text" id="rubricTypeHint">
+                        Simple rubric: criterion name + weight.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div id="criteriaContainer" class="d-grid gap-2"></div>
+
                 <button
                   type="button"
                   class="btn btn-sm btn-outline-secondary mt-2"
@@ -326,15 +350,16 @@ body %}
                 >
                   <i class="fa-solid fa-plus me-1"></i>Add criterion
                 </button>
-                <div class="form-text">
+
+                <div class="form-text" id="criteriaHelpText">
                   Enter the criterion name and its weight (e.g. 1, 0.5, 2...).
                 </div>
               </div>
 
               <div class="col-12">
-                <label class="form-label fw-semibold mt-3"
-                  >AI configuration</label
-                >
+                <label class="form-label fw-semibold mt-3">
+                  AI configuration
+                </label>
 
                 <div class="card p-3 bg-light border-0">
                   <div class="row g-2">
@@ -364,9 +389,9 @@ body %}
                         type="checkbox"
                         id="aiHonors"
                       />
-                      <label class="form-check-label" for="aiHonors"
-                        >Allow honors</label
-                      >
+                      <label class="form-check-label" for="aiHonors">
+                        Allow honors
+                      </label>
                     </div>
 
                     <div class="col-12 mt-2">
@@ -389,9 +414,9 @@ body %}
 
               <!-- MATERIAL UPLOAD -->
               <div class="col-12">
-                <label class="form-label fw-semibold mt-3"
-                  >Course materials (PDF)</label
-                >
+                <label class="form-label fw-semibold mt-3">
+                  Course materials (PDF)
+                </label>
 
                 <div class="card p-3 bg-light border-0">
                   <div class="d-flex flex-wrap align-items-center gap-2">
@@ -431,36 +456,9 @@ body %}
                   type="checkbox"
                   id="cePublished"
                 />
-                <label class="form-check-label" for="cePublished"
-                  >Published</label
-                >
-              </div>
-
-              <!-- BACKDOOR PEER DEBUG -->
-              <div class="col-12">
-                <div class="card p-3 bg-light border-0">
-                  <div class="d-flex align-items-start gap-2">
-                    <input
-                      class="form-check-input mt-1"
-                      type="checkbox"
-                      id="cePeerDebugBroadcast"
-                    />
-                    <div>
-                      <label
-                        class="form-check-label fw-semibold"
-                        for="cePeerDebugBroadcast"
-                      >
-                        Peer debug broadcast
-                      </label>
-                      <div class="small text-muted">
-                        If enabled, all submissions for this exam will appear in
-                        the peer review queue of
-                        <strong>student1</strong> and <strong>student3</strong>,
-                        bypassing the standard 5-task limit.
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <label class="form-check-label" for="cePublished">
+                  Published
+                </label>
               </div>
             </div>
 

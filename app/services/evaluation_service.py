@@ -59,112 +59,116 @@ def _anon_submission_view(s: Submission, exam: Exam | None) -> dict:
 
 class EvaluationService:
     PEER_QUEUE_SIZE = 5
-
-    # ✅ studenti speciali per backdoor applicativa
-    DEBUG_PEER_STUDENT_EMAILS = {
-        "student1@test.com",
-        "student3@test.com",
-    }
+    CYCLIC_PEER_K_DEFAULT = 5
+    REQUIRED_COMPLETED_PEER_REVIEWS = 5
 
     # ==========================================================
-    # HELPERS
+    # CYCLIC PEER ASSIGNMENT GENERATION
     # ==========================================================
 
     @staticmethod
-    def _is_debug_peer_student(student: User) -> bool:
-        email = (getattr(student, "email", None) or "").strip().lower()
-        return email in EvaluationService.DEBUG_PEER_STUDENT_EMAILS
-
-    @staticmethod
-    async def _get_debug_exam_ids(
+    async def generate_cyclic_peer_assignments_for_exam(
         db: AsyncSession,
         *,
-        exam_id: int | None = None,
-    ) -> list[int]:
-        stmt = select(Exam.id).where(Exam.peer_debug_broadcast.is_(True))
-
-        if exam_id is not None:
-            stmt = stmt.where(Exam.id == exam_id)
-
-        res = await db.execute(stmt)
-        return [int(x) for x in res.scalars().all()]
-
-    @staticmethod
-    async def _refill_peer_queue_if_needed(
-        db: AsyncSession,
-        *,
-        student: User,
-        exam_id: int | None = None,
-    ) -> list[int]:
-        """
-        Ritorna:
-        - lista exam_ids in debug mode se lo studente è debug e ci sono esami flaggati
-        - [] in modalità normale
-        """
-
-        # =========================
-        # DEBUG MODE
-        # =========================
-        if EvaluationService._is_debug_peer_student(student):
-            debug_exam_ids = await EvaluationService._get_debug_exam_ids(
-                db,
-                exam_id=exam_id,
+        teacher: User,
+        exam_id: int,
+        k: int = CYCLIC_PEER_K_DEFAULT,
+    ) -> dict:
+        if teacher.role != UserRole.teacher:
+            raise HTTPException(
+                status_code=403,
+                detail="Only teachers can generate peer assignments.",
             )
 
-            if debug_exam_ids:
-                created_any = False
-
-                for ex_id in debug_exam_ids:
-                    candidates = await EvaluationRepository.pick_random_peer_candidates(
-                        db,
-                        student_id=student.id,
-                        limit=None,  # ✅ nessun limite
-                        exam_id=ex_id,
-                        randomize=False,  # ✅ ordine stabile, non random
-                    )
-
-                    if candidates:
-                        await EvaluationRepository.create_peer_assignments(
-                            db,
-                            student_id=student.id,
-                            submissions=candidates,
-                        )
-                        created_any = True
-
-                if created_any:
-                    await db.commit()
-
-                return debug_exam_ids
-
-        # =========================
-        # NORMAL MODE
-        # =========================
-        assigned = await EvaluationRepository.list_peer_assigned(
-            db,
-            student_id=student.id,
-            limit=EvaluationService.PEER_QUEUE_SIZE,
+        exam = (
+            (await db.execute(select(Exam).where(Exam.id == exam_id))).scalars().first()
         )
 
-        missing = EvaluationService.PEER_QUEUE_SIZE - len(assigned)
+        if not exam:
+            raise HTTPException(status_code=404, detail="Exam not found.")
 
-        if missing > 0:
-            candidates = await EvaluationRepository.pick_random_peer_candidates(
-                db,
-                student_id=student.id,
-                limit=missing,
-                exam_id=exam_id,
-                randomize=True,
+        if exam.teacher_id != teacher.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can generate peer assignments only for your exams.",
             )
 
-            if candidates:
-                await EvaluationRepository.create_peer_assignments(
-                    db,
-                    student_id=student.id,
-                    submissions=candidates,
+        if k <= 0:
+            raise HTTPException(status_code=400, detail="k must be greater than 0.")
+
+        submissions = (
+            await EvaluationRepository.list_submissions_for_cyclic_peer_assignment(
+                db,
+                exam_id=exam_id,
+            )
+        )
+
+        n = len(submissions)
+
+        if n < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="At least 2 submitted submissions are required for peer assignment.",
+            )
+
+        effective_k = min(int(k), n - 1)
+
+        existing_pairs = (
+            await EvaluationRepository.list_existing_peer_assignments_for_exam(
+                db,
+                exam_id=exam_id,
+            )
+        )
+
+        pairs_to_create: list[tuple[int, int]] = []
+
+        for i, evaluator_submission in enumerate(submissions):
+            evaluator_student_id = evaluator_submission.student_id
+
+            for offset in range(1, effective_k + 1):
+                target_index = (i + offset) % n
+                target_submission = submissions[target_index]
+
+                if target_submission.student_id == evaluator_student_id:
+                    continue
+
+                pair = (target_submission.id, evaluator_student_id)
+
+                if pair in existing_pairs:
+                    continue
+
+                pairs_to_create.append(pair)
+
+        created_rows: list[Evaluation] = []
+
+        if pairs_to_create:
+            try:
+                created_rows = (
+                    await EvaluationRepository.create_cyclic_peer_assignments(
+                        db,
+                        pairs=pairs_to_create,
+                    )
                 )
                 await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Peer assignments conflict. Some assignments may already exist.",
+                )
 
-        return []
+        expected_total_pairs = n * effective_k
+
+        return {
+            "exam_id": exam_id,
+            "k_requested": int(k),
+            "k_effective": effective_k,
+            "submissions_count": n,
+            "assignments_created": len(created_rows),
+            "assignments_skipped_existing": expected_total_pairs - len(created_rows),
+            "mode": "cyclic",
+            "detail": "Cyclic peer assignments generated successfully.",
+        }
 
     # ==========================================================
     # PEER TASK QUEUE
@@ -186,25 +190,12 @@ class EvaluationService:
 
         limit = max(1, min(limit, EvaluationService.PEER_QUEUE_SIZE))
 
-        debug_exam_ids = await EvaluationService._refill_peer_queue_if_needed(
+        assigned = await EvaluationRepository.list_peer_assigned(
             db,
-            student=student,
+            student_id=student.id,
             exam_id=exam_id,
+            limit=limit,
         )
-
-        # ✅ debug mode: ritorna TUTTE le assegnazioni degli esami flaggati
-        if debug_exam_ids:
-            assigned = await EvaluationRepository.list_peer_assigned_for_exam_ids(
-                db,
-                student_id=student.id,
-                exam_ids=debug_exam_ids,
-            )
-        else:
-            assigned = await EvaluationRepository.list_peer_assigned(
-                db,
-                student_id=student.id,
-                limit=limit,
-            )
 
         submission_ids = [e.submission_id for e in assigned]
 
@@ -263,7 +254,7 @@ class EvaluationService:
         except Exception:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid evaluator_type. Use: student|peer|ai",
+                detail="Invalid evaluator_type. Use: student|peer|ai.",
             )
 
         if etype == EvaluatorType.ai:
@@ -294,6 +285,7 @@ class EvaluationService:
         # ==========================================================
         # STUDENT SELF EVALUATION
         # ==========================================================
+
         if etype == EvaluatorType.student:
             if user.role != UserRole.student:
                 raise HTTPException(
@@ -340,6 +332,7 @@ class EvaluationService:
         # ==========================================================
         # PEER EVALUATION
         # ==========================================================
+
         if etype == EvaluatorType.peer:
             if user.role != UserRole.student:
                 raise HTTPException(
@@ -368,7 +361,7 @@ class EvaluationService:
             if not assignment or assignment.status != EvaluationStatus.assigned.value:
                 raise HTTPException(
                     status_code=403,
-                    detail="This submission is not assigned to you for peer review (or already completed).",
+                    detail="This submission is not assigned to you for peer review or was already completed.",
                 )
 
             assignment.score = payload.score
@@ -389,14 +382,6 @@ class EvaluationService:
                 raise HTTPException(status_code=409, detail="Peer evaluation conflict.")
 
             assignment.details_json = _from_json_maybe(assignment.details_json)
-
-            # ✅ refill normale / debug dopo la completion
-            await EvaluationService._refill_peer_queue_if_needed(
-                db,
-                student=user,
-                exam_id=submission.exam_id,
-            )
-
             return assignment
 
         raise HTTPException(status_code=400, detail="Unsupported evaluator_type.")
@@ -468,6 +453,7 @@ class EvaluationService:
             .scalars()
             .first()
         )
+
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found.")
 
@@ -476,19 +462,25 @@ class EvaluationService:
             .scalars()
             .first()
         )
+
         if not exam or exam.teacher_id != teacher.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
 
         stats = await EvaluationRepository.peer_stats_for_submission(
-            db, submission_id=submission_id
+            db,
+            submission_id=submission_id,
         )
+
         return {
             "submission_id": submission_id,
             "count": stats["count"],
+            "required_count": EvaluationService.REQUIRED_COMPLETED_PEER_REVIEWS,
             "avg": stats["avg"],
             "min": stats["min"],
             "max": stats["max"],
             "closed_at": getattr(sub, "peer_reviews_closed_at", None),
+            "can_close": stats["count"]
+            >= EvaluationService.REQUIRED_COMPLETED_PEER_REVIEWS,
         }
 
     @staticmethod
@@ -503,6 +495,7 @@ class EvaluationService:
             .scalars()
             .first()
         )
+
         if not sub:
             raise HTTPException(status_code=404, detail="Submission not found.")
 
@@ -511,37 +504,54 @@ class EvaluationService:
             .scalars()
             .first()
         )
+
         if not exam or exam.teacher_id != teacher.id:
             raise HTTPException(status_code=403, detail="Not allowed.")
 
         if getattr(sub, "peer_reviews_closed_at", None) is not None:
             return await EvaluationService.peer_summary_for_teacher(
-                db, teacher=teacher, submission_id=submission_id
+                db,
+                teacher=teacher,
+                submission_id=submission_id,
             )
 
         stats = await EvaluationRepository.peer_stats_for_submission(
-            db, submission_id=submission_id
+            db,
+            submission_id=submission_id,
         )
-        if stats["count"] == 0:
+
+        required = EvaluationService.REQUIRED_COMPLETED_PEER_REVIEWS
+
+        if stats["count"] < required:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot close: no completed peer evaluations yet.",
+                detail=(
+                    f"Cannot close: {required} completed peer evaluations are required. "
+                    f"Current completed peer evaluations: {stats['count']}."
+                ),
             )
 
         await EvaluationRepository.close_peer_reviews_for_submission(
-            db, submission_id=submission_id
+            db,
+            submission_id=submission_id,
         )
+
         await EvaluationRepository.delete_peer_assigned_for_submission(
-            db, submission_id=submission_id
+            db,
+            submission_id=submission_id,
         )
 
         await db.commit()
 
+        closed_at = datetime.utcnow()
+
         return {
             "submission_id": submission_id,
             "count": stats["count"],
+            "required_count": required,
             "avg": stats["avg"],
             "min": stats["min"],
             "max": stats["max"],
-            "closed_at": datetime.utcnow(),
+            "closed_at": closed_at,
+            "can_close": True,
         }

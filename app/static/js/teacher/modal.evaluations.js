@@ -5,6 +5,7 @@
   const { utils } = NS;
 
   const modal = (NS.modal = NS.modal || {});
+  const REQUIRED_PEER_EVALUATIONS = 5;
 
   function normalizeEvaluationsPayload(raw) {
     const out = { student: null, ai: null, peer: [] };
@@ -94,19 +95,39 @@
     `;
   }
 
-  function renderPeerGate(submissionId) {
+  function renderPeerGate(submissionId, summary = null) {
     const refs = modal.refs;
     if (!refs?.evalTeacherBody) return;
 
     const w = modal.getInt1to10(refs.wTeacherEl?.value) ?? 6;
+    const completedCount = Number(summary?.count ?? 0);
+    const readyToClose = completedCount >= REQUIRED_PEER_EVALUATIONS;
 
     refs.evalTeacherBody.innerHTML = `
       <div class="fw-semibold">Peer review</div>
+
       <div class="small text-muted">
-        Close peer evaluations for this submission and compute the average.
+        Completed peer evaluations:
+        <strong>${completedCount}</strong>/${REQUIRED_PEER_EVALUATIONS}
       </div>
 
-      <button class="btn btn-sm btn-dark mt-2" id="btnClosePeerReviews">
+      ${
+        readyToClose
+          ? `
+            <div class="small text-success mt-1">
+              Minimum completed peer evaluations reached. You can close and compute the average.
+            </div>
+          `
+          : `
+            <div class="small text-muted mt-1">
+              You can close peer reviews only when exactly ${REQUIRED_PEER_EVALUATIONS} peer evaluations are completed.
+            </div>
+          `
+      }
+
+      <button class="btn btn-sm btn-dark mt-2" id="btnClosePeerReviews" ${
+        readyToClose ? "" : "disabled"
+      }>
         <i class="fa-solid fa-lock me-1"></i>Close peer reviews & compute average
       </button>
 
@@ -119,6 +140,8 @@
     const err = document.getElementById("peerGateError");
 
     btn?.addEventListener("click", async () => {
+      if (!readyToClose) return;
+
       btn.disabled = true;
       const old = btn.innerHTML;
       btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>Closing...`;
@@ -170,7 +193,7 @@
     }
 
     if (!modal.state.peerClosedAt) {
-      renderPeerGate(submissionId);
+      renderPeerGate(submissionId, summary);
       return;
     }
 

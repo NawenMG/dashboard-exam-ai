@@ -31,7 +31,25 @@ async def get_peer_tasks(
     student: User = Depends(require_role("student")),
 ):
     return await EvaluationService.get_peer_tasks(
-        db, student=student, exam_id=exam_id, limit=limit
+        db,
+        student=student,
+        exam_id=exam_id,
+        limit=limit,
+    )
+
+
+@router.post("/peer/generate/{exam_id}", status_code=status.HTTP_200_OK)
+async def generate_peer_assignments(
+    exam_id: int,
+    k: int = Query(default=5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    teacher: User = Depends(require_role("teacher")),
+):
+    return await EvaluationService.generate_cyclic_peer_assignments_for_exam(
+        db,
+        teacher=teacher,
+        exam_id=exam_id,
+        k=k,
     )
 
 
@@ -42,7 +60,9 @@ async def get_peer_summary(
     teacher: User = Depends(require_role("teacher")),
 ):
     return await EvaluationService.peer_summary_for_teacher(
-        db, teacher=teacher, submission_id=submission_id
+        db,
+        teacher=teacher,
+        submission_id=submission_id,
     )
 
 
@@ -53,7 +73,9 @@ async def close_peer_reviews(
     teacher: User = Depends(require_role("teacher")),
 ):
     return await EvaluationService.close_peer_reviews_and_compute(
-        db, teacher=teacher, submission_id=submission_id
+        db,
+        teacher=teacher,
+        submission_id=submission_id,
     )
 
 
@@ -64,5 +86,7 @@ async def list_evaluations_by_submission(
     teacher: User = Depends(require_role("teacher")),
 ):
     return await EvaluationService.list_by_submission_id_for_teacher(
-        db, teacher=teacher, submission_id=submission_id
+        db,
+        teacher=teacher,
+        submission_id=submission_id,
     )

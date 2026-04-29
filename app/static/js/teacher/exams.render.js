@@ -169,17 +169,55 @@
   }
 
   function renderCriteriaEditor(exam, onSaveAll, onCancel) {
+    const initialType = utils.getRubricType(exam);
     const criteria = utils.getCriteria(exam);
 
     const box = document.createElement("div");
     box.className = "card p-2 bg-light border-0";
 
-    const list = document.createElement("div");
-    list.className = "d-grid gap-2";
+    box.innerHTML = `
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <label class="form-label small text-muted mb-1">Rubric type</label>
+          <select class="form-select form-select-sm" data-rubric-type>
+            <option value="simple" ${initialType === "simple" ? "selected" : ""}>Simple criteria</option>
+            <option value="level_based" ${initialType === "level_based" ? "selected" : ""}>Level-based rubric (1–5)</option>
+          </select>
+        </div>
+        <div class="col-md-6 d-flex align-items-end">
+          <div class="form-text" data-rubric-help></div>
+        </div>
+      </div>
 
-    function cRow(name = "", weight = 1) {
+      <div class="d-grid gap-2" data-list></div>
+
+      <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-add>
+        <i class="fa-solid fa-plus me-1"></i>Add criterion
+      </button>
+
+      <div class="d-flex justify-content-end gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-secondary" data-cancel>Cancel</button>
+        <button type="button" class="btn btn-sm text-white" style="background-color:#619ad6" data-save>Save</button>
+      </div>
+
+      <div class="alert alert-danger d-none mb-0 mt-2" data-err></div>
+    `;
+
+    const typeSelect = box.querySelector("[data-rubric-type]");
+    const help = box.querySelector("[data-rubric-help]");
+    const list = box.querySelector("[data-list]");
+    const btnAdd = box.querySelector("[data-add]");
+    const btnCancel = box.querySelector("[data-cancel]");
+    const btnSave = box.querySelector("[data-save]");
+    const err = box.querySelector("[data-err]");
+
+    function currentType() {
+      return typeSelect.value === "level_based" ? "level_based" : "simple";
+    }
+
+    function simpleRow(name = "", weight = 1) {
       const row = document.createElement("div");
-      row.className = "card p-2 border-0 shadow-sm";
+      row.className = "card p-2 border-0 shadow-sm criterion-row";
       row.innerHTML = `
         <div class="row g-2 align-items-center">
           <div class="col">
@@ -199,59 +237,172 @@
       return row;
     }
 
-    if (criteria.length) {
-      criteria.forEach((c) => list.appendChild(cRow(c.name || "", c.weight ?? 0)));
-    } else {
-      list.appendChild(cRow("Correctness", 1));
+    function levelRow(
+      name = "",
+      weight = 1,
+      levels = { "5": "", "4": "", "3": "", "2": "", "1": "" },
+    ) {
+      const row = document.createElement("div");
+      row.className = "card p-3 border-0 shadow-sm level-criterion-row";
+
+      row.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div class="flex-grow-1">
+            <label class="form-label small text-muted mb-1">Indicator / criterion</label>
+            <input class="form-control lc-name" placeholder="Criterion name" value="${utils.escapeHtml(name)}">
+          </div>
+
+          <div style="width: 120px">
+            <label class="form-label small text-muted mb-1">Weight</label>
+            <input type="number" step="0.1" class="form-control lc-weight" value="${weight}">
+          </div>
+
+          <div class="pt-4">
+            <button type="button" class="btn btn-sm btn-outline-danger" title="Remove">
+              <i class="fa-solid fa-x"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="row g-2">
+          ${[5, 4, 3, 2, 1]
+            .map(
+              (n) => `
+                <div class="col-12">
+                  <label class="form-label small text-muted mb-1">Level ${n}</label>
+                  <input
+                    class="form-control lc-level"
+                    data-level="${n}"
+                    placeholder="Descriptor for level ${n}"
+                    value="${utils.escapeHtml(levels?.[String(n)] || "")}"
+                  >
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `;
+
+      row.querySelector("button").onclick = () => row.remove();
+      return row;
     }
 
-    const btnAdd = document.createElement("button");
-    btnAdd.type = "button";
-    btnAdd.className = "btn btn-sm btn-outline-secondary";
-    btnAdd.innerHTML = `<i class="fa-solid fa-plus me-1"></i>Add criterion`;
-    btnAdd.onclick = () => list.appendChild(cRow());
+    function renderRows(useExisting = false) {
+      list.innerHTML = "";
 
-    const footer = document.createElement("div");
-    footer.className = "d-flex justify-content-end gap-2 mt-2";
-    footer.innerHTML = `
-      <button type="button" class="btn btn-sm btn-secondary">Cancel</button>
-      <button type="button" class="btn btn-sm text-white" style="background-color:#619ad6">Save</button>
-    `;
+      if (currentType() === "level_based") {
+        help.textContent = "Each criterion has descriptors for levels 5 to 1.";
+        btnAdd.innerHTML = `<i class="fa-solid fa-plus me-1"></i>Add indicator`;
 
-    const err = document.createElement("div");
-    err.className = "alert alert-danger d-none mb-0 mt-2";
+        if (useExisting && criteria.length) {
+          criteria.forEach((c) =>
+            list.appendChild(levelRow(c.name || "", c.weight ?? 1, utils.getCriterionLevels(c))),
+          );
+        } else {
+          list.appendChild(levelRow());
+        }
 
-    footer.children[0].onclick = () => onCancel?.();
-    footer.children[1].onclick = async () => {
-      err.classList.add("d-none");
-      err.textContent = "";
-
-      const out = [];
-      list.querySelectorAll(".card").forEach((row) => {
-        const name = row.querySelector(".c-name").value.trim();
-        const weight = parseFloat(row.querySelector(".c-weight").value);
-        if (name) out.push({ name, weight: Number.isFinite(weight) ? weight : 0 });
-      });
-
-      if (!out.length) {
-        err.textContent = "Enter at least one evaluation criterion.";
-        err.classList.remove("d-none");
         return;
       }
 
+      help.textContent = "Simple rubric: criterion name + weight.";
+      btnAdd.innerHTML = `<i class="fa-solid fa-plus me-1"></i>Add criterion`;
+
+      if (useExisting && criteria.length) {
+        criteria.forEach((c) => list.appendChild(simpleRow(c.name || "", c.weight ?? 1)));
+      } else {
+        list.appendChild(simpleRow("Correctness", 1));
+      }
+    }
+
+    typeSelect.addEventListener("change", () => renderRows(false));
+
+    btnAdd.onclick = () => {
+      if (currentType() === "level_based") list.appendChild(levelRow());
+      else list.appendChild(simpleRow());
+    };
+
+    btnCancel.onclick = () => onCancel?.();
+
+    btnSave.onclick = async () => {
+      err.classList.add("d-none");
+      err.textContent = "";
+
+      let rubricJson;
+
+      if (currentType() === "level_based") {
+        const out = [];
+
+        list.querySelectorAll(".level-criterion-row").forEach((row) => {
+          const name = row.querySelector(".lc-name").value.trim();
+          const weight = parseFloat(row.querySelector(".lc-weight").value);
+
+          const levels = {};
+          row.querySelectorAll(".lc-level").forEach((input) => {
+            levels[String(input.getAttribute("data-level"))] = input.value.trim();
+          });
+
+          if (name) {
+            out.push({
+              name,
+              weight: Number.isFinite(weight) ? weight : 0,
+              levels,
+            });
+          }
+        });
+
+        if (!out.length) {
+          err.textContent = "Enter at least one evaluation indicator.";
+          err.classList.remove("d-none");
+          return;
+        }
+
+        const invalid = out.find((criterion) =>
+          [5, 4, 3, 2, 1].some((n) => !String(criterion.levels[String(n)] || "").trim()),
+        );
+
+        if (invalid) {
+          err.textContent =
+            "For level-based rubrics, every criterion must have descriptors for levels 5, 4, 3, 2 and 1.";
+          err.classList.remove("d-none");
+          return;
+        }
+
+        rubricJson = {
+          type: "level_based",
+          scale: { min: 1, max: 5 },
+          criteria: out,
+        };
+      } else {
+        const out = [];
+
+        list.querySelectorAll(".criterion-row").forEach((row) => {
+          const name = row.querySelector(".c-name").value.trim();
+          const weight = parseFloat(row.querySelector(".c-weight").value);
+          if (name) out.push({ name, weight: Number.isFinite(weight) ? weight : 0 });
+        });
+
+        if (!out.length) {
+          err.textContent = "Enter at least one evaluation criterion.";
+          err.classList.remove("d-none");
+          return;
+        }
+
+        rubricJson = {
+          type: "simple",
+          criteria: out,
+        };
+      }
+
       try {
-        await onSaveAll(out);
+        await onSaveAll(rubricJson);
       } catch (e) {
         err.textContent = e?.message || "Error";
         err.classList.remove("d-none");
       }
     };
 
-    box.appendChild(list);
-    box.appendChild(btnAdd);
-    box.appendChild(footer);
-    box.appendChild(err);
-
+    renderRows(true);
     return box;
   }
 
@@ -308,7 +459,7 @@
           <div class="d-flex align-items-center justify-content-between gap-2">
             <div class="small">
               <i class="fa-solid fa-file-pdf me-2 text-danger"></i>
-              ${utils.escapeHtml(it.filename || ("PDF #" + it.id))}
+              ${utils.escapeHtml(it.filename || "PDF #" + it.id)}
               <div class="text-muted small">${utils.safeDate(it.uploaded_at)}</div>
             </div>
             <div class="d-flex gap-2">
@@ -397,32 +548,49 @@
             }
           </span>
 
-          <span class="me-3">
-            <strong>Peer debug:</strong>
-            ${
-              exam.peer_debug_broadcast
-                ? `<span class="text-danger fw-semibold">on</span>`
-                : `<span class="text-muted fw-semibold">off</span>`
-            }
-          </span>
-
           <span class="me-3"><strong>Created:</strong> ${utils.safeDate(exam.created_at)}</span>
           <span class="me-3"><strong>Updated:</strong> ${utils.safeDate(exam.updated_at)}</span>
         </div>
 
-        ${
-          !exam.is_published
-            ? `
-              <button class="btn btn-sm btn-warning" data-action="publish-show-confirm">
-                <i class="fa-solid fa-upload me-1"></i>Publish exam
-              </button>
-            `
-            : `
-              <span class="badge bg-success">
-                <i class="fa-solid fa-lock me-1"></i>Published (locked)
-              </span>
-            `
-        }
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm btn-outline-dark" data-action="peer-generate">
+            <i class="fa-solid fa-rotate me-1"></i>Generate peer assignments
+          </button>
+
+          ${
+            !exam.is_published
+              ? `
+                <button class="btn btn-sm btn-warning" data-action="publish-show-confirm">
+                  <i class="fa-solid fa-upload me-1"></i>Publish exam
+                </button>
+              `
+              : `
+                <span class="badge bg-success d-inline-flex align-items-center">
+                  <i class="fa-solid fa-lock me-1"></i>Published (locked)
+                </span>
+              `
+          }
+        </div>
+      </div>
+
+      <div class="collapse mt-2" data-peer-generate-confirm>
+        <div class="card border-dark bg-light">
+          <div class="card-body small">
+            <div class="fw-semibold mb-1">Generate cyclic peer assignments</div>
+            <div class="text-muted mb-2">
+              This assigns each submitted student to evaluate the next 5 submissions in cyclic order.
+              Existing assignments are skipped.
+            </div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <button class="btn btn-sm btn-secondary" data-action="peer-generate-cancel">Cancel</button>
+              <button class="btn btn-sm btn-dark" data-action="peer-generate-confirm">Generate</button>
+            </div>
+
+            <div class="alert alert-danger d-none mt-2 mb-0" data-peer-generate-error></div>
+            <div class="alert alert-success d-none mt-2 mb-0" data-peer-generate-success></div>
+          </div>
+        </div>
       </div>
 
       <div class="collapse mt-2" data-publish-confirm>
@@ -450,6 +618,71 @@
       </div>
     `;
     bodyEl.appendChild(top);
+
+    const btnPeerShow = top.querySelector('[data-action="peer-generate"]');
+    const peerCollapseEl = top.querySelector("[data-peer-generate-confirm]");
+    const btnPeerCancel = top.querySelector('[data-action="peer-generate-cancel"]');
+    const btnPeerConfirm = top.querySelector('[data-action="peer-generate-confirm"]');
+    const peerErrBox = top.querySelector("[data-peer-generate-error]");
+    const peerSuccessBox = top.querySelector("[data-peer-generate-success]");
+
+    if (btnPeerShow && peerCollapseEl) {
+      const bsPeerCollapse = new bootstrap.Collapse(peerCollapseEl, { toggle: false });
+
+      function stopEvt(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      btnPeerShow.addEventListener("mousedown", stopEvt);
+      btnPeerShow.addEventListener("click", (e) => {
+        stopEvt(e);
+        bsPeerCollapse.toggle();
+      });
+
+      btnPeerCancel?.addEventListener("mousedown", stopEvt);
+      btnPeerCancel?.addEventListener("click", (e) => {
+        stopEvt(e);
+        bsPeerCollapse.hide();
+      });
+
+      btnPeerConfirm?.addEventListener("mousedown", stopEvt);
+      btnPeerConfirm?.addEventListener("click", async (e) => {
+        stopEvt(e);
+
+        peerErrBox?.classList.add("d-none");
+        peerSuccessBox?.classList.add("d-none");
+        if (peerErrBox) peerErrBox.textContent = "";
+        if (peerSuccessBox) peerSuccessBox.textContent = "";
+
+        const old = btnPeerConfirm.innerHTML;
+        btnPeerConfirm.disabled = true;
+        btnPeerConfirm.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>Generating...`;
+
+        try {
+          const res = await window.DASH.api(`/evaluations/peer/generate/${exam.id}?k=5`, {
+            method: "POST",
+          });
+
+          if (peerSuccessBox) {
+            peerSuccessBox.innerHTML = `
+              Peer assignments generated.
+              Created: <strong>${utils.escapeHtml(res?.assignments_created ?? 0)}</strong>.
+              Existing skipped: <strong>${utils.escapeHtml(res?.assignments_skipped_existing ?? 0)}</strong>.
+            `;
+            peerSuccessBox.classList.remove("d-none");
+          }
+        } catch (e2) {
+          if (peerErrBox) {
+            peerErrBox.textContent = e2?.message || "Error generating peer assignments.";
+            peerErrBox.classList.remove("d-none");
+          }
+        } finally {
+          btnPeerConfirm.disabled = false;
+          btnPeerConfirm.innerHTML = old;
+        }
+      });
+    }
 
     const btnShowConfirm = top.querySelector('[data-action="publish-show-confirm"]');
     const confirmCollapse = top.querySelector("[data-publish-confirm]");
@@ -633,8 +866,10 @@
     details.appendChild(qRow);
 
     const cs = utils.getCriteria(exam);
+    const rubricTypeLabel = utils.isLevelRubric(exam) ? "level-based rubric" : "simple rubric";
+
     const cSummary = cs.length
-      ? `<span>${cs.length} criteria</span>`
+      ? `<span>${cs.length} criteria <span class="text-muted">(${rubricTypeLabel})</span></span>`
       : `<span class="text-muted">0 criteria</span>`;
 
     const cRow = renderFieldRow({
@@ -644,10 +879,10 @@
       onEditClick: () => {
         const editor = renderCriteriaEditor(
           exam,
-          async (newCriteria) => {
+          async (newRubricJson) => {
             const updated = await window.DASH.api(`/exams/${exam.id}`, {
               method: "PUT",
-              body: JSON.stringify({ rubric_json: { criteria: newCriteria } }),
+              body: JSON.stringify({ rubric_json: newRubricJson }),
             });
             Object.assign(exam, updated);
             await hydrateExamAccordion(exam, bodyEl);
@@ -675,24 +910,61 @@
 
       const csLocal = utils.getCriteria(exam);
       slot.classList.remove("d-none");
-      slot.innerHTML =
-        csLocal.length === 0
-          ? `<div class="text-muted small">No criteria.</div>`
-          : `
-            <div class="small">
-              ${csLocal
-                .map(
-                  (c) => `
-                    <div class="mb-1">
+
+      if (csLocal.length === 0) {
+        slot.innerHTML = `<div class="text-muted small">No criteria.</div>`;
+        return;
+      }
+
+      if (utils.isLevelRubric(exam)) {
+        slot.innerHTML = `
+          <div class="small d-grid gap-2">
+            ${csLocal
+              .map((c) => {
+                const levels = utils.getCriterionLevels(c);
+                return `
+                  <div class="border rounded-3 p-2 bg-white">
+                    <div class="fw-semibold">
                       ${utils.escapeHtml(c.name)}
-                      <span class="text-muted">(weight ${c.weight ?? 0})</span>
+                      <span class="text-muted fw-normal">(weight ${c.weight ?? 0})</span>
                     </div>
-                  `,
-                )
-                .join("")}
-            </div>
-          `;
+                    <div class="mt-1">
+                      ${[5, 4, 3, 2, 1]
+                        .map(
+                          (n) => `
+                            <div class="mb-1">
+                              <span class="badge bg-secondary me-1">${n}</span>
+                              ${utils.escapeHtml(levels[String(n)] || "—")}
+                            </div>
+                          `,
+                        )
+                        .join("")}
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")}
+          </div>
+        `;
+        return;
+      }
+
+      slot.innerHTML = `
+        <div class="small">
+          ${csLocal
+            .map(
+              (c) => `
+                <div class="mb-1">
+                  ${utils.escapeHtml(c.name)}
+                  <span class="text-muted">(weight ${c.weight ?? 0})</span>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `;
     };
+
     details.appendChild(cRow);
 
     const matWrap = document.createElement("div");

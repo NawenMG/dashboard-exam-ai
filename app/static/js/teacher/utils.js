@@ -36,10 +36,36 @@
       return exam?.questions_json?.questions || [];
     };
 
+  utils.getRubricType =
+    utils.getRubricType ||
+    function getRubricType(exam) {
+      const type = exam?.rubric_json?.type;
+      return type === "level_based" ? "level_based" : "simple";
+    };
+
+  utils.isLevelRubric =
+    utils.isLevelRubric ||
+    function isLevelRubric(exam) {
+      return utils.getRubricType(exam) === "level_based";
+    };
+
   utils.getCriteria =
     utils.getCriteria ||
     function getCriteria(exam) {
       return exam?.rubric_json?.criteria || [];
+    };
+
+  utils.getCriterionLevels =
+    utils.getCriterionLevels ||
+    function getCriterionLevels(criterion) {
+      const levels = criterion?.levels || {};
+      return {
+        "5": levels["5"] || "",
+        "4": levels["4"] || "",
+        "3": levels["3"] || "",
+        "2": levels["2"] || "",
+        "1": levels["1"] || "",
+      };
     };
 
   utils.getStudentLabelFromSubmission =
