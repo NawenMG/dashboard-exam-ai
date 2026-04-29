@@ -19,16 +19,33 @@
       );
     };
 
-  utils.safeDate =
-    utils.safeDate ||
-    function safeDate(dt) {
-      if (!dt) return "—";
-      try {
-        return new Date(dt).toLocaleString();
-      } catch {
-        return String(dt);
+utils.safeDate =
+  utils.safeDate ||
+  function safeDate(dt) {
+    if (!dt) return "—";
+
+    try {
+      let value = String(dt);
+
+      // Se il backend manda UTC senza timezone, aggiungo Z
+      // così il browser capisce che è UTC e lo converte in Europe/Rome.
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value)) {
+        value += "Z";
       }
-    };
+
+      return new Date(value).toLocaleString("it-IT", {
+        timeZone: "Europe/Rome",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    } catch {
+      return String(dt);
+    }
+  };
 
   utils.getQuestions =
     utils.getQuestions ||
