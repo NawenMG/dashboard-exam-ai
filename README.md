@@ -1,30 +1,29 @@
 📚 FastAPI Exam Dashboard with AI Evaluation
 
-Sistema completo per la gestione di esami universitari con:
+Sistema completo per la gestione di esami universitari con supporto a:
 
-👨‍🏫 gestione docenti e studenti
-📝 creazione e sottomissione esami
-🤖 valutazione automatica tramite AI (Ollama / LLM locale)
-👥 peer evaluation tra studenti (anonima e ciclica)
-📊 calcolo voto finale
-🔐 autenticazione JWT Ed25519
-🐳 containerizzazione completa con Docker
-🗄 database MariaDB con Alembic migrations
-
+gestione docenti e studenti
+creazione e pubblicazione esami
+sottomissione risposte con autovalutazione
+peer evaluation anonima e ciclica tra studenti
+valutazione automatica tramite AI (Ollama + RAG)
+calcolo voto finale pesato
+autenticazione JWT (Ed25519)
+containerizzazione con Docker
 🧱 Architettura
 
-Stack utilizzato:
+Stack principale:
 
 FastAPI
 SQLAlchemy 2.0
 Alembic
-MariaDB
+Yugabyte
 Docker + Docker Compose
-Ollama (per AI evaluation)
-JWT Ed25519 authentication
+Ollama (LLM locale)
+Qdrant (vector DB per RAG)
+JWT Ed25519
 Repository pattern + Service layer
-Frontend con Jinja2 + JS
-
+Frontend: Jinja2 + JavaScript modulare
 📁 Struttura progetto
 app/
  ├── api/
@@ -43,6 +42,8 @@ docker-compose.yml
 dockerfile
 ⚙️ Prerequisiti
 
+Installare:
+
 Docker
 Docker Compose
 Git
@@ -52,43 +53,53 @@ Verifica:
 docker --version
 docker compose version
 git --version
+🤖 Setup Ollama (fondamentale per AI)
 
-Installare Ollama:
+Installazione:
 
-https://ollama.com/download
+curl -fsSL https://ollama.com/install.sh | sh
 
-Scaricare modello:
+Avvio servizio:
 
-ollama pull llama3.1:8b
-🚀 Avvio rapido
+ollama serve
+
+Scaricare modelli:
+
+ollama pull llama3.2:3b
+ollama pull nomic-embed-text
+🚀 Avvio progetto
 git clone https://github.com/TUO_USERNAME/dashboard-exam-ai.git
 cd dashboard-exam-ai
 
 docker compose up --build
 
-Oppure:
+Oppure in background:
 
 docker compose up -d --build
 ✅ Cosa succede automaticamente
-DB creato
-Migrations eseguite
-Seed iniziale
-Backend avviato
+
+All’avvio:
+
+database creato
+migrations Alembic eseguite
+seed iniziale caricato
+API FastAPI avviata
+frontend disponibile
 
 Log:
 
 docker compose logs -f api
-🌐 Accesso
-
+🌐 Accesso applicazione
 http://localhost:8000
 
 Swagger:
 
 http://localhost:8000/docs
+🔐 Credenziali di test
 
-🔐 Login
+Password:
 
-Password: password
+password
 
 Teacher:
 
@@ -101,122 +112,127 @@ Student:
 student0@test.com
 student1@test.com
 ...
-👥 Peer Evaluation (COME TESTARLA)
+🧭 Utilizzo Dashboard (Flusso Completo)
+1. Creazione esame (Teacher)
+Login come teacher
+Vai in dashboard
+Click su Create exam
+Inserisci:
+titolo
+descrizione
+domande
+rubric (simple o level-based)
+(Opzionale) carica PDF materiali
+Salva
+2. Pubblicazione esame
+Apri card esame
+Click Publish
 
-Questa è la parte più importante del sistema.
+⚠️ Solo esami pubblicati sono visibili agli studenti.
 
-🔁 Logica implementata
-Ogni studente valuta k = 5 submission di altri studenti
-Assegnazione ciclica
-Nessuno valuta sé stesso
-Nessun duplicato
-Anonimato garantito
-🧪 Test step-by-step
-1. Login come teacher
+3. Svolgimento esame (Student)
+Login come studente
+Dashboard → Exams
+Click Join
+Compila:
+risposte
+self evaluation (obbligatoria)
+
+Submit:
+
+viene creata:
+Submission
+Evaluation (type = student)
+👥 Peer Evaluation
+🔁 Logica
+
+Sistema ciclico:
+
+ogni studente valuta k = 5 submission
+se pochi studenti → k = n - 1
+nessun self-review
+nessun duplicato
+anonimato completo
+🧪 Come testarla
+Step 1 – Creare dataset
+
+Login teacher:
+
 teacher0@test.com
-2. Crea un esame
 
-Dashboard teacher → "Create exam"
+Crea e pubblica un esame.
 
-3. Pubblica esame
+Step 2 – Creare submission
 
-👉 IMPORTANTE: solo esami pubblicati funzionano per peer
+Login con più studenti:
 
-4. Login come studenti
+student0
+student1
+student2
+student3
+student4
+student5
 
-Esempio:
+Ognuno:
 
-student0@test.com
-student1@test.com
-student2@test.com
-student3@test.com
-student4@test.com
-5. Ogni studente invia una submission
+svolge esame
+invia submission
+Step 3 – Generare peer assignments
 
-Vai su:
+Login teacher:
 
-/dashboard/execution-exam/{exam_id}
+Apri esame
+Click:
+Generate peer assignments
 
-Completa esame + self evaluation
-
-6. Torna come teacher
-
-Clicca:
-
-👉 Generate peer assignments
-
-Questo chiama:
+Backend:
 
 POST /evaluations/peer/generate/{exam_id}
-7. Verifica assegnazioni
+Step 4 – Completare peer review
 
-Ogni studente ora ha:
+Login studenti:
 
-k = min(5, n-1)
+Vai in:
 
-Esempio:
+Dashboard → Peer Review
 
-5 studenti → 4 peer ciascuno
-8. Login come studente
+Ogni studente vede:
 
-Vai su:
+Anonymous submission
 
-👉 Dashboard → Peer Review
-
-Vedrai:
-
-Anonymous submission #...
-9. Completa peer evaluation
-
-Ogni studente deve fare:
+Deve inserire:
 
 score (0–30)
 commento
-10. Chiusura peer (teacher)
+Step 5 – Chiusura peer (Teacher)
 
-Quando tutte le peer sono completate:
+Quando una submission ha:
 
-👉 Teacher → Submission → Close peer reviews
+5 peer completed
 
-Questo:
+Teacher:
+
+apre submission
+click:
+Close peer reviews
+
+Effetti:
 
 blocca nuove peer
 elimina pending
-calcola stats
-11. AI evaluation
-POST /ai-evaluations/{submission_id}
-12. Final grade
-POST /final-grades
-📊 Distribuzione peer
+calcola statistiche (avg, min, max)
+📊 Distribuzione
 
 Con N studenti:
 
-assegnazioni totali = N * k
+assegnazioni = N * min(5, N-1)
 
-Esempio:
+Esempi:
 
 Studenti	k	Totale
 5	4	20
 10	5	50
 50	5	250
-⚠️ Errori comuni
-1. Nessuna peer generata
-
-✔ studenti < 2
-
-2. Generate cliccato più volte
-
-✔ idempotente (no duplicati)
-
-3. Studente non vede task
-
-✔ non ha submission
-✔ peer già chiuse
-
-4. Faker rompe test
-
-✔ ora NON genera peer automaticamente
-
 🤖 AI Evaluation
 
 Endpoint:
@@ -226,10 +242,35 @@ POST /ai-evaluations/{submission_id}
 Richiede:
 
 Ollama attivo
-modello scaricato
+modello installato
+
+Flusso:
+
+recupera risposte
+recupera rubric
+usa RAG (Qdrant)
+genera valutazione AI
+salva evaluation type = ai
+📊 Final Grade
+
+Endpoint:
+
+POST /final-grades
+
+Richiede:
+
+self evaluation
+peer evaluation completate
+AI evaluation
+
+Formula:
+
+final = peer * 0.6 + ai * 0.3 + self * 0.1
 🗄 Database
 
-MariaDB + Alembic
+Yugabyte + Alembic
+
+Manuale:
 
 docker compose exec api alembic upgrade head
 🌱 Seed
@@ -240,21 +281,21 @@ utenti
 esami
 submission
 
-⚠️ NON genera peer automaticamente (modificato)
+⚠️ Le peer NON sono generate automaticamente.
 
-🐳 Servizi
+🐳 Servizi Docker
 fastapi_api
-fastapi_mariadb
+fastapi_yugabyte
 fastapi_adminer
+qdrant
 
 Adminer:
 
 http://localhost:8080
-
-🔄 Reset DB
+🔄 Reset completo
 docker compose down -v
 docker compose up --build
-🧠 Architettura
+🧠 Architettura software
 
 Pattern:
 
@@ -262,25 +303,31 @@ Repository Pattern
 Service Layer
 Dependency Injection
 DTO (Pydantic)
-
 🔒 Sicurezza
-
 JWT Ed25519
-bcrypt
+bcrypt password hashing
 RBAC
-
+token revocation
 🧪 Dev senza Docker
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-👨‍💻 Autore
+👨‍💻 Note finali
 
-Progetto dimostrativo per:
+Il cuore del sistema è:
 
-peer evaluation avanzata
-AI grading con RAG
-architettura backend moderna
+Exam
+ → Submission
+ → Answer[]
+ → Evaluation (student)
+ → Evaluation (peer[])
+ → Evaluation (ai)
+ → FinalGrade
+
+La parte avanzata è:
+
+PDF → chunking → embedding → Qdrant → retrieval → prompt → AI evaluation
 📄 Licenza
 
 Uso didattico / dimostrativo.
